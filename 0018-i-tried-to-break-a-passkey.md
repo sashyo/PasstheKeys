@@ -7,7 +7,7 @@ author: Sasha
 art: key
 draft: true
 ---
-Hi, Sasha here. Serial vibe coder, back with a confession: I spent a few days trying to break a passkey, and I failed. I want to walk you through exactly how I failed, because the wall I kept hitting is the reason passkeys are worth having, and the one crack I found is the reason Tide binds your token.
+We are told passkeys are unphishable, and against a fake site that is true. But on the real site a passkey is remarkably trusting. It signs whatever challenge the page puts in front of it, and the session that unlocks is a token bound to nothing. The strength is only at a distance. Up close, where the attacker already is, it signs the wrong thing and hands out a key that fits any lock.
 
 ## The tempting idea
 

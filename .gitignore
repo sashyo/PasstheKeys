@@ -2,3 +2,4 @@ node_modules/
 pocketid-demo/.env
 pocketid-demo/data/
 pocketid-demo/server.log
+pocketid-demo/videos/
