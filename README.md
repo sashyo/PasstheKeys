@@ -61,7 +61,7 @@ npm run e2e                                       # headless virtual-authenticat
 ## Public or cross-machine demo
 
 Passkeys bind to the hostname, so serve the app over a real HTTPS host and set `APP_URL`
-to it. Quick test tunnel:
+to it. To host it on Azure Container Apps, see [DEPLOY.md](DEPLOY.md). Quick test tunnel:
 
 ```bash
 cloudflared tunnel --url http://localhost:1411   # copy the https URL it prints
