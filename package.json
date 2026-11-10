@@ -1,0 +1,14 @@
+{
+  "name": "pocketid-login-takeover-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Passkey login-takeover demo against a local Pocket ID instance. Authorized demo and self-testing only.",
+  "scripts": {
+    "start": "node pocketid-demo/server.mjs",
+    "e2e": "node pocketid-demo/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

