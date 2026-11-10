@@ -43,11 +43,13 @@ It is a plain bearer token. Hold it and you are treated as the user, full stop. 
 
 A passkey proves you are present and stops there. Tide keeps watching, on both sides of the signature.
 
-Going in, before Tide's network will use a key, every node runs the request through a Forseti contract: a small program that checks the request is the one it is meant to honor, the right shape, the right person, the right action. A number that wandered in from somewhere else, aimed at something you never intended, does not get honored. The page is pinned to its own hashes with subresource integrity too, so the swapped-in script that starts this whole attack never loads to begin with.
+Going in, the page is pinned to its own hashes with subresource integrity. The swapped-in script that starts this whole attack never loads, so the relay never starts. Close that door and the signing ceremony stays honest: the only challenge on the page is the one the real login put there.
 
 Coming out, the token is bound to the device that earned it, sender-constrained, DPoP in the standards. Carry it to another laptop and it is dead on arrival. In our [3D login piece](#/record/0016-logging-in) you can watch a hacker copy a Tide token and get precisely nowhere. This post is the other half of that story: an unbound token going everywhere.
 
-The passkey never asked where the number came from, what it authorized, or what became of the session. Tide asks all three.
+And there is nothing sitting in one place to lift. Tide never holds the signing key whole; it is split across independent nodes, and if you stop trusting one you rehome to another. No single machine to breach, no key to copy, no token to replay.
+
+The passkey never asked where the number came from, what it authorized, or what became of the session. Tide watches all three.
 
 ## What I built
 
