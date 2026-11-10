@@ -15,7 +15,7 @@ Start with the part that works, because it really does. When you sign in with a 
 
 ## What they never check
 
-Now the part nobody mentions. A passkey binds four things: which key signed, which site, which address, and a one-time number the server issued, the challenge. That is the whole promise. Read the list again and notice what is not on it. The device does not check where that number came from. It does not check what signing it will let through. It does not care what becomes of the session afterward. You tap your finger, it signs the number in front of it, and it never asks who wrote the number down.
+Now the part nobody mentions. A passkey binds four things: which key signed, which site, which address, and a one-time number the server issued, the challenge. That is the whole promise. Read the list again and notice what is missing. The device does not check where that number came from. It does not check what signing it will let through. It does not care what becomes of the session afterward. You tap your finger, it signs the number in front of it, and it never asks who wrote the number down.
 
 At a distance, that gap is harmless. The attacker cannot get their number onto the real page, or get your signature back off it. So the gap just sits there, out of reach.
 
@@ -23,11 +23,11 @@ Unless the attacker is already on the page.
 
 ## So I stood on the page
 
-Picture my code running on the real login screen. Pick your way in: a cross-site-scripting hole, a sketchy browser extension, one poisoned dependency in a pile of thousands. I do not need to break the passkey. I need to be in the room when it is used.
+Picture my code running on the real login screen. Pick your way in: a cross-site-scripting hole, a sketchy browser extension, one poisoned dependency in a pile of thousands. The passkey's crypto stays perfectly intact. I just have to be on the page when you use it.
 
 I start my own login, and the server hands me a fresh challenge. I take that number and quietly drop it into your sign-in, where your number used to be. You tap your fingerprint on the real site, see a normal welcome, and carry on with your day. Your device just signed my number, on the right address, with your key. I carry the signature back and finish the login I started. I am you now.
 
-The part that still unsettles me: I never had an account. The login hands out an anonymous challenge and learns who you are from whoever signs. So I am not borrowing your session. I am minting a brand new one, as you, on demand.
+The part that still unsettles me: I never had an account. The login hands out an anonymous challenge and learns who you are from whoever signs. The session I walk away with is brand new, minted on demand, and it wears your name.
 
 Two honest things. It needs the breach first; from a distance a passkey still shrugs me off, and that is worth a lot. And once my code is on your authenticated page, I have other mischief available. But look hard at what the passkey did, on its own: it handed a working login for someone else to a stranger who offered nothing but a number. It checked the address and the signature, and never once asked whether it was signing the right thing.
 
@@ -39,9 +39,15 @@ It is a plain bearer token. Hold it and you are treated as the user, full stop. 
 
 > The passkey signs the wrong thing. The token it earns fits any lock.
 
-## Bind the token
+## Tide watches both doors
 
-The fix is not to make the passkey fussier about what it signs, though it should be. It is to give the token the one property the passkey has and the token does not: a tie to the device that earned it, so the moment it turns up anywhere else, it fails. That is sender-constraining, DPoP in the standards, and it is the whole point of Tide. In our [3D login piece](#/record/0016-logging-in) you can watch a hacker copy a Tide token and get precisely nowhere. This post is the other half of that story: an unbound token going everywhere. Bind it, and a stolen token, or a credential lifted off a breached page, is dead weight on every machine but the owner's.
+A passkey proves you are present and stops there. Tide keeps watching, on both sides of the signature.
+
+Going in, before Tide's network will use a key, every node runs the request through a Forseti contract: a small program that checks the request is the one it is meant to honor, the right shape, the right person, the right action. A number that wandered in from somewhere else, aimed at something you never intended, does not get honored. The page is pinned to its own hashes with subresource integrity too, so the swapped-in script that starts this whole attack never loads to begin with.
+
+Coming out, the token is bound to the device that earned it, sender-constrained, DPoP in the standards. Carry it to another laptop and it is dead on arrival. In our [3D login piece](#/record/0016-logging-in) you can watch a hacker copy a Tide token and get precisely nowhere. This post is the other half of that story: an unbound token going everywhere.
+
+The passkey never asked where the number came from, what it authorized, or what became of the session. Tide asks all three.
 
 ## What I built
 
@@ -51,6 +57,6 @@ Nobody faked a passkey. Nobody had to.
 
 ## The far door and the near one
 
-Passkeys are not broken, and they are not magic. They stop the attacker who is far away, which is most of them, and they do it better than anything we had before. What they do not do is protect a page the attacker is already standing on, and there they are startlingly literal. They sign the number in front of them. They hand back a token tied to nothing. The far door is bolted. The near one swings open, and what walks out is the token.
+Passkeys are not broken, and they are not magic. They stop the attacker who is far away, which is most of them, and they do it better than anything we had before. They do not protect a page the attacker is already standing on, and there they are startlingly literal. They sign the number in front of them. They hand back a token tied to nothing. The far door is bolted. The near one swings open, and what walks out is the token.
 
-So bind the token.
+A passkey never watches that door. Tide watches both.
