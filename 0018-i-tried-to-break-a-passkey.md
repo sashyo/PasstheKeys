@@ -7,46 +7,50 @@ author: Sasha
 art: key
 draft: true
 ---
-We are told passkeys are unphishable, and against a fake site that is true. But on the real site a passkey is remarkably trusting. It signs whatever challenge the page puts in front of it, and the session that unlocks is a token bound to nothing. The strength is only at a distance. Up close, where the attacker already is, it signs the wrong thing and hands out a key that fits any lock.
+We are told passkeys are unphishable, and against a fake site that is true. But on the real site a passkey is remarkably trusting. It signs whatever challenge the page puts in front of it, and the session that unlocks is a token bound to nothing. The strength is only at a distance. Up close, where the attacker already is, it signs the wrong thing and hands out a key that fits any lock. I spent a few days standing up close. Here is what I walked out with.
 
-## The tempting idea, and the one that actually works
+## The one thing passkeys get right
 
-The story people tell is simple: steal the proof your passkey makes when you log in, carry it to another site, and walk in as you. That version really does not work, and it is worth knowing why, because it is the one thing passkeys do brilliantly. The proof is stamped with the exact web address it was made on. Take it anywhere else and the address no longer matches, so it is thrown out. A fake login page cannot reuse a passkey the way it reuses a password.
+Start with the part that works, because it really does. When you sign in with a passkey, your device makes a small signed blob, and it stamps the exact web address into it, letter for letter. Carry that blob to any other site and the address no longer matches, so it is thrown out on sight. This is why a lookalike login page can harvest your passkey all day and never reuse it. Phishing kits replay passwords and one-time codes by the hour. A passkey, they cannot touch. Credit where it is due: from across the internet, this is a wall.
 
-But that is a story about distance. It assumes the attacker is far away, pulling your proof toward them. Flip it around. What if their code is already on the real page, the one with the right address? Then they do not move the proof at all. They change what you sign, right there, and let your own device hand them a clean, valid login. I built exactly that against a real login on my own test instance. It works.
+## What they never check
 
-## What a passkey actually checks
+Now the part nobody mentions. A passkey binds four things: which key signed, which site, which address, and a one-time number the server issued, the challenge. That is the whole promise. Read the list again and notice what is not on it. The device does not check where that number came from. It does not check what signing it will let through. It does not care what becomes of the session afterward. You tap your finger, it signs the number in front of it, and it never asks who wrote the number down.
 
-When you sign in, your device makes a small signed blob, and it binds four things into it: which key signed, which site, the exact address it was signed on, and a one-time number the server issued for that login, the challenge. That binding is real and it is strong. It is also the whole of what a passkey promises. Notice what is not on the list. It does not check where the challenge came from, or what signing it will authorize, or what becomes of the session afterward. The device signs the number it is handed. It never asks who wrote that number down.
+At a distance, that gap is harmless. The attacker cannot get their number onto the real page, or get your signature back off it. So the gap just sits there, out of reach.
 
-From a distance that gap is harmless, because the attacker cannot get their challenge onto the real page or get the signature back off it. On the real page, the gap is the whole attack.
+Unless the attacker is already on the page.
 
-## Swapping the number, up close
+## So I stood on the page
 
-Here is the move. My code is on the login page. Assume a cross-site-scripting hole, a bad browser extension, a poisoned dependency; pick your breach. I start my own login and catch the fresh challenge the server hands me. I slip that challenge into your sign-in in place of yours. You tap your fingerprint on the real site, see an ordinary welcome, and notice nothing. Your device just signed my challenge, on the right address, with your key. I carry that signature back to the server and finish my login. I am now you.
+Picture my code running on the real login screen. Pick your way in: a cross-site-scripting hole, a sketchy browser extension, one poisoned dependency in a pile of thousands. I do not need to break the passkey. I need to be in the room when it is used.
 
-The sharp part: I never needed an account. The login hands out an anonymous challenge and learns who you are from whoever signs it. So this is not me riding your session. It is me getting a brand new one, as you, minted on demand.
+I start my own login, and the server hands me a fresh challenge. I take that number and quietly drop it into your sign-in, where your number used to be. You tap your fingerprint on the real site, see a normal welcome, and carry on with your day. Your device just signed my number, on the right address, with your key. I carry the signature back and finish the login I started. I am you now.
 
-Two honest notes. It needs the breach first; from a distance a passkey is still unphishable, and that is worth a great deal. And yes, once my code runs on your authenticated page I have other ways to cause trouble. But look at what the passkey did here on its own: it handed a valid login for someone else to a party that offered nothing but a number. It checked the address and the signature, and never once asked whether it was signing the right thing.
+The part that still unsettles me: I never had an account. The login hands out an anonymous challenge and learns who you are from whoever signs. So I am not borrowing your session. I am minting a brand new one, as you, on demand.
 
-## And the token it mints is bound to nothing
+Two honest things. It needs the breach first; from a distance a passkey still shrugs me off, and that is worth a lot. And once my code is on your authenticated page, I have other mischief available. But look hard at what the passkey did, on its own: it handed a working login for someone else to a stranger who offered nothing but a number. It checked the address and the signature, and never once asked whether it was signing the right thing.
 
-Now the multiplier. The signature was single use, locked to one moment, useless to carry off. But the thing the server hands back the instant it succeeds, your session token, is locked to nothing at all.
+## The token fits any lock
 
-It is a plain bearer token. Whoever holds it is treated as you. Send it from another laptop, another country, a script with no passkey and no device, and the server says yes. Worse, the long-lived credential that mints those tokens travels just as well. Grab it once and print fresh tokens from anywhere, long after any single one expires. "But tokens expire in a minute" buys nothing when the thing that makes them is in the attacker's pocket.
+Here is where it gets worse, and where it stops being about passkeys at all. The signature I harvested was single use, locked to one moment, useless to keep. But the thing the server hands back the instant it works, your session token, is locked to nothing.
+
+It is a plain bearer token. Hold it and you are treated as the user, full stop. Send it from another laptop, another country, a script with no device and no passkey, and the server says yes. The credential that mints those tokens travels just as well; lift it once and print new tokens from anywhere, long after any single one dies. "Tokens expire in a minute" is cold comfort when the machine that makes them is in my pocket.
 
 > The passkey signs the wrong thing. The token it earns fits any lock.
 
 ## Bind the token
 
-The fix is not to make the passkey cleverer about what it signs, though that would help. It is to give the token the one property the passkey has and the token lacks: a tie to the device that earned it, so presenting it from anywhere else fails. That is sender-constraining, DPoP in the standards, and it is what Tide does. In our [3D login piece](#/record/0016-logging-in) you can watch a hacker copy a Tide token and get nowhere. This post is the other half: an unbound token going everywhere. Bind it, and a stolen token, or a credential lifted from a breached page, is dead weight on any machine but yours.
+The fix is not to make the passkey fussier about what it signs, though it should be. It is to give the token the one property the passkey has and the token does not: a tie to the device that earned it, so the moment it turns up anywhere else, it fails. That is sender-constraining, DPoP in the standards, and it is the whole point of Tide. In our [3D login piece](#/record/0016-logging-in) you can watch a hacker copy a Tide token and get precisely nowhere. This post is the other half of that story: an unbound token going everywhere. Bind it, and a stolen token, or a credential lifted off a breached page, is dead weight on every machine but the owner's.
 
-## What I actually built
+## What I built
 
-All of it runs against my own instance with throwaway users, nothing real touched. A login page for an ordinary-looking app, backdoored the way a breached page would be. Anyone can create an account and add a passkey. When they sign in, that one tap is relayed, and on a second screen an attacker's dashboard fills with captured sessions, one row per person, each a live token with a ticking expiry. Open a row and it greets you by their name, read straight from their account with their own stolen token.
+All of it runs on my own instance, throwaway users, nothing real touched. There is an ordinary-looking app with an ordinary login, backdoored the way a breached page would be. Anyone can create an account and add a passkey. The moment they sign in, that one tap is relayed, and on a second screen an attacker's dashboard fills up, one row per person, each row a live token with a countdown ticking toward zero. Open a row and it greets you by their name, read straight off their account with their own stolen token.
 
-## The takeaway
+Nobody faked a passkey. Nobody had to.
 
-Passkeys are not broken, and they are not magic. They stop the attacker who is far away, which is most attackers, and they do it better than anything before them. They do not protect a page the attacker is already standing on, and there they are startlingly literal: they sign the number in front of them and hand back a token tied to nothing. The far door is bolted. The near one swings open, and the thing it lets out is the token.
+## The far door and the near one
+
+Passkeys are not broken, and they are not magic. They stop the attacker who is far away, which is most of them, and they do it better than anything we had before. What they do not do is protect a page the attacker is already standing on, and there they are startlingly literal. They sign the number in front of them. They hand back a token tied to nothing. The far door is bolted. The near one swings open, and what walks out is the token.
 
 So bind the token.
