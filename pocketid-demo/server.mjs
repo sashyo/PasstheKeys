@@ -14,6 +14,7 @@
 // Authorized demo use only: your own local Pocket ID + disposable test users.
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,12 @@ import { fileURLToPath } from 'node:url';
 const PORT = Number(process.env.PORT || 1411);
 const PID = { host: '127.0.0.1', port: Number(process.env.PID_PORT || 1412) };
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Share the admin key with Pocket ID via the same .env (optional: enables open sign-up).
+if (!process.env.STATIC_API_KEY) {
+  try { const m = /^STATIC_API_KEY=(.+)$/m.exec(readFileSync(path.join(__dirname, '.env'), 'utf8')); if (m) process.env.STATIC_API_KEY = m[1].trim(); } catch {}
+}
+const API_KEY = process.env.STATIC_API_KEY || ''; // Pocket ID admin key, enables open sign-up
 
 const slots = new Map();    // slotId -> { challenge, rpId, cookie, at }  (pending, 60s)
 const sessions = new Map(); // id -> { id, name, email, userId, token, exp, at } (banked)
@@ -44,12 +51,13 @@ function proxy(req, res) {
 }
 
 // Server-side call to Pocket ID.
-function pid(method, pathname, { body, cookie } = {}) {
+function pid(method, pathname, { body, cookie, apiKey } = {}) {
   return new Promise((resolve, reject) => {
     const data = body ? Buffer.from(JSON.stringify(body)) : null;
     const headers = { accept: 'application/json', host: `localhost:${PORT}` };
     if (data) { headers['content-type'] = 'application/json'; headers['content-length'] = data.length; }
     if (cookie) headers.cookie = cookie;
+    if (apiKey && API_KEY) headers['x-api-key'] = API_KEY;
     const r = http.request({ host: PID.host, port: PID.port, method, path: pathname, headers }, (pr) => {
       const chunks = []; pr.on('data', (c) => chunks.push(c)); pr.on('end', () => resolve({ status: pr.statusCode, headers: pr.headers, body: Buffer.concat(chunks).toString() }));
     });
@@ -64,6 +72,21 @@ const pruneSlots = () => { const cut = Date.now() - 70000; for (const [k, v] of 
 
 const server = http.createServer(async (req, res) => {
   const pth = new URL(req.url, 'http://localhost').pathname;
+
+  // Open sign-up: create a Pocket ID user (admin key) and mint a one-time token. The
+  // browser exchanges that token for a session, then adds its passkey. Unlimited users.
+  if (pth === '/x/signup' && req.method === 'POST') {
+    if (!API_KEY) return json(res, 200, { ok: false, error: 'open sign-up needs STATIC_API_KEY (use the first-user setup instead)' });
+    const b = JSON.parse((await readBody(req)) || '{}');
+    if (!b.username || !b.email) return json(res, 400, { error: 'username and email required' });
+    try {
+      const c = await pid('POST', '/api/users', { apiKey: true, body: { firstName: b.firstName || '', lastName: b.lastName || '', username: b.username, email: b.email, disabled: false } });
+      if (c.status >= 300) return json(res, 200, { ok: false, error: 'create ' + c.status + ' ' + c.body.slice(0, 160) });
+      const userId = JSON.parse(c.body).id;
+      const t = await pid('POST', `/api/users/${userId}/one-time-access-token`, { apiKey: true, body: {} });
+      return json(res, 200, { ok: true, token: JSON.parse(t.body).token });
+    } catch (e) { return json(res, 502, { ok: false, error: e.message }); }
+  }
 
   // Victim asks for a challenge: mint a fresh Pocket ID login challenge for THIS victim.
   if (pth === '/x/stage' && req.method === 'GET') {

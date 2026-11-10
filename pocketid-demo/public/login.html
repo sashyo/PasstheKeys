@@ -77,15 +77,22 @@ function serializeAttestation(cred){ const r=cred.response; return {
   response:{ attestationObject:bufToB64url(r.attestationObject), clientDataJSON:bufToB64url(r.clientDataJSON), transports: r.getTransports ? r.getTransports() : undefined }
 }; }
 
-// First-time setup: create the first account and register a passkey (Windows Hello),
-// talking to Pocket ID through this origin. Works for the first user on a fresh instance.
+// Create an account and register a passkey (Windows Hello), through this origin.
+// Open sign-up (any number of users) when the server has the admin key; otherwise falls
+// back to Pocket ID's first-user setup.
 $('enroll').onclick = async () => {
   const body = { firstName: $('first').value.trim(), lastName: $('last').value.trim(), username: $('username').value.trim(), email: $('email').value.trim() };
   if (!body.username || !body.email) { $('setupStatus').textContent = 'Enter at least a username and email.'; return; }
   $('enroll').disabled = true; $('setupStatus').textContent = 'Creating account…';
   try {
-    const s = await fetch('/api/signup/setup', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-    if (!s.ok) throw new Error('signup: ' + s.status + ' (already set up? reset Pocket ID)');
+    const su = await (await fetch('/x/signup', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) })).json();
+    if (su.ok) {
+      const ex = await fetch('/api/one-time-access-token/' + encodeURIComponent(su.token), { method:'POST' }); // exchange for a session
+      if (!ex.ok) throw new Error('token exchange: ' + ex.status);
+    } else {
+      const s = await fetch('/api/signup/setup', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) }); // first-user fallback
+      if (!s.ok) throw new Error('signup: ' + s.status + ' (' + (su.error || 'already set up?') + ')');
+    }
     $('setupStatus').textContent = 'Approve the passkey prompt…';
     const opts = await (await fetch('/api/webauthn/register/start')).json();
     const pub = { ...opts, challenge: b64urlToBuf(opts.challenge), user: { ...opts.user, id: b64urlToBuf(opts.user.id) } };

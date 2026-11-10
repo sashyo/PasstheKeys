@@ -30,8 +30,9 @@ node server.mjs               # the app on :1411 (no npm install needed to run)
 3. Back on `/login`, click **Sign in with passkey**. A row appears on the dashboard.
    Open it for **Welcome, &lt;you&gt;**, the stolen token, and its expiry countdown.
 
-Every sign-in, by anyone, adds a row. For more names, create more users in Pocket ID's
-admin UI (sign in as the first user, then Settings) and have each add a passkey.
+Every sign-in, by anyone, adds a row. With `STATIC_API_KEY` set, **anyone can create an
+account** from the login page (open sign-up), so many people can join the demo. Without
+it, "Create an Account" only works for the first user (Pocket ID's setup).
 
 ## How it works
 
