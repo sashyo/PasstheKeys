@@ -3,3 +3,8 @@ pocketid-demo/.env
 pocketid-demo/data/
 pocketid-demo/server.log
 pocketid-demo/videos/
+
+# runtime server logs
+pocketid-demo/*.log
+pocketid-demo/*.out.log
+pocketid-demo/*.err.log

