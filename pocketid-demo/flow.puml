@@ -1,58 +1,60 @@
 @startuml PasstheKeys
-title PasstheKeys - frontend nonce-hijack: the attacker ends up inside the victim's account on the SAME website
+title PasstheKeys - frontend nonce-hijack across three separate systems
 
 skinparam shadowing false
 skinparam defaultFontName sans-serif
 skinparam sequenceMessageAlign center
-skinparam ParticipantPadding 16
+skinparam ParticipantPadding 14
 skinparam BoxPadding 12
 
 actor "Victim" as V
-box "Acme Workspace - one website, one origin" #EEF1FF
-  participant "Victim's tab\n/login (backdoored)" as VP
-  participant "Attacker's tab\n/attacker" as AP
+box "The website (Acme Workspace)" #EEF1FF
+  participant "Front-end\nvictim's tab (/login)" as VP
+  participant "Back-end\nthe app + its account data" as WB
 end box
-participant "Dead-drop\n(/x/offer, /x/assertion)" as S
-participant "Pocket ID\n(via same-origin /api)" as PID
+participant "Pocket ID\npasskey auth only" as PID
+box "Attacker's site (separate origin)" #FDECEC
+  participant "Attacker's tab" as AP
+  participant "Back-end\ndead-drop + proxy" as AD
+end box
 actor "Attacker" as A
 
-note over VP, AP
-  Both people are on the SAME website (Acme Workspace, one origin). The Pocket ID login
-  ceremony runs in the ATTACKER's tab; the server is only a dead-drop. No token is ever
-  read - the attacker finishes the login itself, so the session lands in its own browser.
+note across
+  Three separate systems. Pocket ID only proves who you are (passkey auth). The website is
+  NOT Pocket ID: its own back-end holds the account data and is what the page presents.
+  The attacker's site is a different origin. The attacker never signs anything.
 end note
 
-== Attacker arms, in its own tab of the site ==
-A -> AP : open Acme Workspace
-AP -> PID : GET /api/webauthn/login/start
-PID --> AP : nonce **Ca** + session cookie (stays in the attacker's tab)
-AP -> S : POST /x/offer { Ca }   (publish the nonce, do NOT finish)
+== Attacker starts a passkey login, but will not finish it ==
+A -> AP : open the attacker site
+AP -> PID : start a passkey login
+PID --> AP : nonce **Ca** (challenge)
+AP -> AD : publish **Ca** in the dead-drop
 
-== Victim tries to log into the site; signs the attacker's nonce ==
+== Victim tries to log into the website ==
 V -> VP : click "Sign in"
-VP -> S : GET /x/offer -> **Ca**   (picks up the attacker's nonce, not its own)
-VP -> V : navigator.credentials.get({ challenge: **Ca** })
-V --> VP : assertion over **Ca** (victim's key, this origin, user verified)
-VP -> S : POST /x/assertion { assertion }
-VP -> V : "Hmm, that did not work" - victim is NOT logged into Acme Workspace
+VP -> AD : fetch the nonce (cross-origin) -> **Ca**
+VP -> V : passkey prompt - sign **Ca**
+V --> VP : assertion over **Ca** (bound to the WEBSITE's origin)
+VP -> AD : hand the assertion back
+VP -> V : "that did not work" - the victim never finished a login, so gets no session
 
-== Attacker finishes the login and is now inside the victim's account ==
-AP -> S : GET /x/assertion -> assertion
-AP -> PID : POST /api/webauthn/login/finish (assertion + its own session cookie)
-PID --> AP : 200 + Set-Cookie **access_token** (the victim's session, in the attacker's tab)
-AP -> PID : GET /api/users/me
-PID --> AP : the victim's profile
-AP -> A : Acme Workspace home: "Welcome back, <victim>"
+== Attacker finishes the login, then reads the victim's data ==
+AP -> AD : take the assertion
+AP -> PID : finish the passkey login with it
+PID --> AP : a session for the victim  (Pocket ID did AUTH only)
+AP -> WB : "give me the account" - with the victim's session
+WB --> AP : the victim's account data  (the back-end is where the data lives)
+AP -> A : present it: "Welcome back, <victim>"
 
-note over V, A #FFF3E0
-  Same website, opposite ends: the victim is locked out of their own Acme Workspace account;
-  the attacker's tab of Acme Workspace is signed in AS the victim.
-  Why it works: the victim's signature is valid for THIS origin and the attacker is on this
-  origin, so the attacker can finish a ceremony it started. The passkey checks the origin and
-  the signature; it never asks who the nonce belonged to.
+note across #FFF3E0
+  Pocket ID says who; the website's back-end holds what. By hijacking the passkey login the
+  attacker gets the victim's session and pulls the victim's data from the website back-end,
+  then shows it on the attacker's own site.
+  (In this demo the back-end's account data is the Pocket ID user profile it fronts.)
   Where Tide closes it:
     Going in   - subresource integrity: the swapped-in script never loads, so none of this runs.
-    Coming out - DPoP / sender-constrained token: bound to the device, useless in another browser.
+    Coming out - DPoP / sender-constrained session: bound to the device, useless on another site.
 end note
 
 @enduml
