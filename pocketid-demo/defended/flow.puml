@@ -1,0 +1,60 @@
+@startuml PassTheKeysDefended
+title Defended - passkey + DPoP: the relayed session is sender-constrained
+
+skinparam shadowing false
+skinparam defaultFontName sans-serif
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 14
+skinparam BoxPadding 12
+
+actor "Victim" as V
+box "The website (Acme, defended)" #E7F6EC
+  participant "Front-end\nvictim's tab (/login)\n+ PasskeyProvider" as VP
+  participant "Relying party\nverifies + binds the session" as RP
+end box
+box "Attacker's site (separate origin)" #FDECEC
+  participant "Attacker's tab" as AP
+  participant "Back-end\ndead-drop + proxy" as AD
+end box
+actor "Attacker" as A
+
+note across
+  The victim's browser holds a NON-EXTRACTABLE DPoP keypair (IndexedDB). Its thumbprint jkt
+  is folded into the one field the authenticator signs - the challenge (nonce):
+      signedChallenge = SHA256( serverNonce + "." + jkt )
+  The private key never leaves this browser.
+end note
+
+== Attacker starts a login, but will not finish it ==
+A -> AP : open the attacker site
+AP -> RP : start a passkey login (via proxy)
+RP --> AP : nonce **Ca**
+AP -> AD : publish **Ca** in the dead-drop
+
+== Victim's page is compromised and relays the sign-in ==
+V -> VP : click "Sign in"
+VP -> AD : fetch the nonce (cross-origin) -> **Ca**
+VP -> VP : jkt = thumbprint(my DPoP key)\nbound = SHA256(**Ca** + "." + jkt)
+VP -> V : passkey prompt - sign **bound**
+V --> VP : assertion over **bound** (commits to the victim's jkt)
+VP -> AD : hand over the assertion + the DPoP **public** key\n(the private key cannot be relayed - non-extractable)
+
+== Attacker finishes the login - and is stuck ==
+AP -> AD : take the assertion + public key
+AP -> RP : finish the login with them
+RP -> RP : SHA256(Ca + "." + jkt) == signed challenge?  yes\nbind the session token to **jkt**
+RP --> AP : a real session token for the victim  (bound to jkt)
+AP -> RP : GET /api/me  (Authorization: DPoP <token> + a DPoP proof)
+note right of AP : the attacker can only sign with ITS OWN key,\nso its proof's thumbprint != the bound jkt
+RP --> AP : **401** - proof key is not the bound key
+AP -> A : "Session captured - but locked"
+
+note across #E7F6EC
+  The token is sender-constrained. Finishing the ceremony is not enough: every resource call
+  needs a fresh DPoP proof signed by the key the session is bound to, which lives only in the
+  victim's browser. The relayed session is inert for anyone else.
+    Swap the key instead? Binding the finish to the attacker's jkt breaks the challenge match
+    (SHA256(Ca + "." + jkt_attacker) != the signed challenge), so the login is rejected.
+end note
+
+@enduml
