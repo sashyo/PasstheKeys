@@ -13,3 +13,6 @@ demos/betterauth-exploit/*.db-journal
 *.apikey
 cloudflared.exe
 videos/
+
+# stale locked copy of the old folder (lives on disk until those processes stop)
+pocketid-demo/

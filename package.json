@@ -6,10 +6,8 @@
   "description": "Passkey login-takeover exploit (Better Auth) and two sender-constraining fixes. Authorized demo and self-testing only.",
   "scripts": {
     "exploit": "node demos/betterauth-exploit/run.mjs",
-    "defended": "node demos/defended/run.mjs",
-    "ext": "node demos/dpop-ext/run.mjs",
-    "defended:test": "node demos/defended/e2e.mjs",
-    "ext:test": "node demos/dpop-ext/e2e.mjs"
+    "fix": "node demos/dpop-ext/run.mjs",
+    "fix:test": "node demos/dpop-ext/e2e.mjs"
   },
   "dependencies": {
     "better-auth": "^1.7.21",
