@@ -8,6 +8,10 @@ pocketid-demo/defended/videos/
 !pocketid-demo/defended/videos/
 pocketid-demo/defended/videos/*
 !pocketid-demo/defended/videos/combined.mp4
+pocketid-demo/dpop-ext/videos/
+!pocketid-demo/dpop-ext/videos/
+pocketid-demo/dpop-ext/videos/*
+!pocketid-demo/dpop-ext/videos/combined.mp4
 
 # runtime server logs
 pocketid-demo/*.log

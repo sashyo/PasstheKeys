@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acme Workspace</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#0d1117; --muted:#667085; --line:#e4e7ec; --brand:#3b5bdb; --bad:#b42318; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; display:grid; place-items:center; min-height:100vh; }
+  .card { width:min(420px,92vw); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:34px 30px; box-shadow:0 10px 30px rgba(16,24,40,.06); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; margin-bottom:22px; }
+  .logo { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,var(--brand),#7048e8); }
+  .wait { text-align:center; padding:26px 0; color:var(--muted); }
+  .dot { width:11px; height:11px; border-radius:50%; background:var(--brand); display:inline-block; margin-right:8px; animation:pulse 1.1s infinite; vertical-align:middle; }
+  @keyframes pulse { 0%,100%{opacity:.25;} 50%{opacity:1;} }
+  .result { display:none; text-align:center; padding:10px 0; }
+  .lock { width:64px; height:64px; border-radius:50%; background:rgba(180,35,24,.09); color:var(--bad); display:grid; place-items:center; margin:0 auto 10px; }
+  .lock svg { width:32px; height:32px; }
+  .big { font-size:20px; font-weight:700; margin:6px 0; color:var(--bad); }
+  .em { color:var(--muted); }
+  .pill { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--muted); word-break:break-all; margin-top:10px; text-align:left; background:#f8f9fb; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .foot { margin-top:22px; color:#98a2b3; font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><div class="logo"></div> Acme Workspace</div>
+
+  <div id="wait" class="wait">
+    <div><span class="dot"></span><b>Waiting for a sign-in&hellip;</b></div>
+    <p>When someone signs in on the app, this tab tries to land in their account.</p>
+  </div>
+
+  <div id="result" class="result">
+    <div class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+    <div class="big">Session captured, but locked</div>
+    <p class="em" id="why">The token is bound to the victim's authenticator-held key.</p>
+    <div class="pill" id="detail"></div>
+  </div>
+
+  <div class="foot">Authenticator-held per-session key &middot; named in signed authenticatorData</div>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const post = (u, body) => fetch(u, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
+
+let armed = false, passkeyToken = null;
+async function arm() {
+  try {
+    const begin = await (await post('/login/begin', {})).json(); // proxied to the victim RP
+    passkeyToken = begin.passkeyToken;
+    await post('/x/offer', { publicKey: begin.publicKey });
+    armed = true;
+  } catch { setTimeout(arm, 1500); }
+}
+
+async function poll() {
+  if (!armed) return;
+  let a; try { a = await (await fetch('/x/assertion')).json(); } catch { return; }
+  if (!a || !a.assertion) return;
+  armed = false;
+
+  // Finish the login with the victim's relayed assertion. It names the VICTIM's session key.
+  const fin = await (await post('/login/finish', { assertion: a.assertion, passkeyToken })).json();
+  if (!fin.ok) { show('Login finish rejected', fin.error || '(no detail)'); arm(); return; }
+
+  // Try to USE the token. /api/me needs a proof signed by the session key, which is sealed in the
+  // victim's authenticator. This machine has no authenticator for it, so there is no proof.
+  const htu = location.origin + '/api/me';
+  let why = '', body = '';
+  try {
+    const r = await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token } }); // no proof
+    body = await r.text(); why = r.ok ? 'UNEXPECTED: resource returned ' + r.status : 'resource refused (' + r.status + ')';
+  } catch (e) { why = 'request failed: ' + (e.message || e); }
+  show(why, 'token ' + fin.token.slice(0, 12) + '…  →  ' + body);
+  arm();
+}
+
+function show(why, detail) { $('why').textContent = why; $('detail').textContent = detail; $('wait').style.display = 'none'; $('result').style.display = 'block'; }
+
+arm();
+setInterval(poll, 1200);
+setInterval(() => { if (armed) arm(); }, 45000);
+</script>
+</body>
+</html>
