@@ -63,7 +63,7 @@ async function popProof(session) {
   const proof = await session.proof(b64url(sha256(Buffer.from('GET ' + HTU + ' ' + nonce))));
   return b64url(Buffer.from(JSON.stringify(proof)));
 }
-const getMe = (token, proofB64) => fetch(BASE + '/api/me', { headers: { authorization: 'Passkey ' + token, ...(proofB64 ? { 'x-passkey-proof': proofB64 } : {}) } });
+const getMe = (token, proofB64) => fetch(BASE + '/api/me', { headers: { authorization: 'Passkey ' + token, ...(proofB64 ? { 'x-dpop-proof': proofB64 } : {}) } });
 
 let failed = 0; const check = (ok, msg) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${msg}`); };
 

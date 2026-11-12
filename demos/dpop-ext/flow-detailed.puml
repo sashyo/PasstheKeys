@@ -67,7 +67,7 @@ note right of AP
   exposed to the relay. The attacker cannot produce the proof.
 end note
 AP -> RP : GET /api/me  (no valid proof)
-RP --> AP : 401 - missing passkey proof
+RP --> AP : 401 - missing dpop proof
 AP -> A : "Session captured, but locked"
 
 note across #E7F6EC

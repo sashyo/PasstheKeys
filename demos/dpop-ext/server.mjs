@@ -60,7 +60,7 @@ async function serveFile(res, file, type = 'text/html; charset=utf-8') {
 const cors = (res, origin = VICTIM_ORIGIN) => {
   res.setHeader('access-control-allow-origin', origin);
   res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type,authorization,x-passkey-proof');
+  res.setHeader('access-control-allow-headers', 'content-type,authorization,x-dpop-proof');
 };
 function proxy(req, res) {
   const headers = { ...req.headers, host: RP_HOST };
@@ -172,9 +172,9 @@ const server = http.createServer(async (req, res) => {
   if (pth === '/api/me') {
     const m = /^Passkey (.+)$/.exec(req.headers['authorization'] || '');
     const sess = m && sessions.get(m[1]);
-    if (!sess) return json(res, 401, { error: 'no passkey-bound session token' });
-    const proofHdr = req.headers['x-passkey-proof'];
-    if (!proofHdr) return json(res, 401, { error: 'missing passkey proof (SK assertion required per request)' });
+    if (!sess) return json(res, 401, { error: 'no dpop-bound session token' });
+    const proofHdr = req.headers['x-dpop-proof'];
+    if (!proofHdr) return json(res, 401, { error: 'missing dpop proof (SK assertion required per request)' });
     let proof; try { proof = JSON.parse(fromB64url(String(proofHdr)).toString('utf8')); } catch { return json(res, 400, { error: 'unparseable proof' }); }
     const htu = VICTIM_ORIGIN + '/api/me';
     let matched = null;

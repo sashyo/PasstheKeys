@@ -92,7 +92,7 @@ $('go').onclick = async () => {
     const { nonce } = await (await post('/api/pop-challenge', {})).json();
     const proof = await provider.prove(handle, 'GET', htu, nonce);
     const hdr = btoa(unescape(encodeURIComponent(JSON.stringify(proof)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-    const me = await (await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token, 'x-passkey-proof': hdr } })).json();
+    const me = await (await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token, 'x-dpop-proof': hdr } })).json();
     $('hinit').textContent = (String(me.displayName||'?').trim()[0] || '?').toUpperCase();
     $('hname').textContent = 'Welcome, ' + (me.displayName || me.username || 'you');
     $('hjkt').textContent = 'bound jkt (SK): ' + me.jkt;
