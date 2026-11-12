@@ -1,6 +1,6 @@
 // Record a clean demo video of the DEFENDED flow (no overlays, real UI). Spawns its own
 // victim RP + attacker site, then films two screens:
-//   victim.webm   : one person enrolls, signs in (DPoP-bound) -> "Welcome", then their page is
+//   victim.webm   : one person enrolls, signs in (passkey-bound) -> "Welcome", then their page is
 //                   compromised and relays the sign-in to the attacker.
 //   attacker.webm : the attacker tab waiting, then flipping to "Session captured - but locked"
 //                   when it finishes the relayed login and /api/me refuses the stolen token.
@@ -59,7 +59,7 @@ try {
   vic = await ctx(browser, true, true);
   victimVideo = vic.page.video();
 
-  // Enroll + legit DPoP-bound sign-in (shows the defended flow works for the real user).
+  // Enroll + legit passkey-bound sign-in (shows the defended flow works for the real user).
   await vic.page.goto(`${APP}/login`, { waitUntil: 'domcontentloaded' });
   await sleep(800);
   await vic.page.click('#setup summary'); await sleep(500);
@@ -69,7 +69,7 @@ try {
   await sleep(1200);
   await vic.page.click('#go');
   await vic.page.waitForFunction(() => document.getElementById('home')?.style.display === 'block', null, { timeout: 20000 });
-  await sleep(3500); // hold on "Welcome, Jordan" + bound jkt
+  await sleep(3500); // hold on "Welcome, Jordan" + bound passkey
 
   // Now the page is compromised: relay the sign-in to the attacker's waiting login.
   await vic.page.goto(`${APP}/login?drop=${encodeURIComponent(ATT)}`, { waitUntil: 'domcontentloaded' });

@@ -1,13 +1,18 @@
-// Defended relying party: a self-contained, zero-dependency WebAuthn RP that sender-constrains
-// its sessions to a browser-held DPoP key (see public/passkey-provider.js for the client half).
+// Defended relying party: passkey-bound sessions. The sender-constraining key is the passkey
+// credential ITSELF (held in the authenticator), not a key generated in the page. A session is
+// bound to the public key of the credential that signed the login, and exercising the session
+// requires a fresh WebAuthn proof-of-possession assertion for each request. Nothing the page's
+// JavaScript can read or choose binds the session, so a page running attacker code cannot
+// substitute or exfiltrate the binding key.
 //
-// It runs in the same two roles as the attack demo so the EXISTING relay can be pointed at it:
+// Runs in the same two roles as the attack demo so the EXISTING relay can be pointed at it:
 //   ROLE=victim   PORT=1421  Acme (defended): /login + enrollment, the RP, the resource server.
 //   ROLE=attacker PORT=1423  the attacker's site + dead-drop + /api proxy to the victim RP.
 //
-// The payoff: the relay still completes the WebAuthn ceremony and the attacker mints a REAL
-// session token for the victim -- and it is inert, because the token is bound to the victim's
-// DPoP jkt and every resource call requires a DPoP proof the attacker cannot produce.
+// The payoff: the relay still completes the login ceremony and the attacker mints a REAL session
+// token for the victim -- and it is inert, because /api/me needs a passkey proof the attacker's
+// machine cannot produce (no authenticator) and the victim's page cannot hand over (the key
+// never leaves the authenticator).
 //
 // Authorized demo use only: your own machine and disposable test users.
 import http from 'node:http';
@@ -20,60 +25,53 @@ const subtle = wc.subtle;
 const ROLE = process.env.ROLE === 'attacker' ? 'attacker' : 'victim';
 const PORT = Number(process.env.PORT || (ROLE === 'attacker' ? 1423 : 1421));
 const VICTIM_ORIGIN = process.env.VICTIM_ORIGIN || 'http://localhost:1421';
-const RP_HOST = new URL(VICTIM_ORIGIN).host;               // where the victim RP really listens
-const RP_ID = new URL(VICTIM_ORIGIN).hostname;             // WebAuthn rpId
+const RP_HOST = new URL(VICTIM_ORIGIN).host;
+const RP_ID = new URL(VICTIM_ORIGIN).hostname;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ---------- tiny codecs / crypto helpers --------------------------------------
+// ---------- codecs / crypto helpers -------------------------------------------
 const b64url = (buf) => Buffer.from(buf).toString('base64url');
 const fromB64url = (s) => Buffer.from(s, 'base64url');
 const sha256 = (buf) => createHash('sha256').update(buf).digest();
 
-// DER-encoded ECDSA (SEQUENCE{INTEGER r, INTEGER s}) -> raw 64-byte r||s for P-256.
 function derToRawEcdsa(der) {
   let o = 0;
   if (der[o++] !== 0x30) throw new Error('bad der');
-  if (der[o] & 0x80) o += (der[o] & 0x7f) + 1; else o++;        // skip SEQUENCE length
+  if (der[o] & 0x80) o += (der[o] & 0x7f) + 1; else o++;
   const readInt = () => {
     if (der[o++] !== 0x02) throw new Error('bad der int');
     let len = der[o++]; let v = der.subarray(o, o + len); o += len;
-    while (v.length > 32 && v[0] === 0x00) v = v.subarray(1);    // strip sign padding
-    const out = Buffer.alloc(32); v.copy(out, 32 - v.length);    // left-pad to 32
+    while (v.length > 32 && v[0] === 0x00) v = v.subarray(1);
+    const out = Buffer.alloc(32); v.copy(out, 32 - v.length);
     return out;
   };
   return Buffer.concat([readInt(), readInt()]);
 }
-
 async function importEcVerifyKeySpki(spki) {
-  return subtle.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  return subtle.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
 }
-async function importEcVerifyKeyJwk(jwk) {
-  return subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-}
-async function jwkThumbprint(jwk) {
-  const canon = `{"crv":"${jwk.crv}","kty":"${jwk.kty}","x":"${jwk.x}","y":"${jwk.y}"}`;
-  return b64url(sha256(Buffer.from(canon)));
+// RFC 7638 thumbprint of a credential's EC public key (for display + session matching).
+async function credThumbprint(spkiBuf) {
+  const key = await importEcVerifyKeySpki(spkiBuf);
+  const jwk = await subtle.exportKey('jwk', key);
+  return b64url(sha256(Buffer.from(`{"crv":"${jwk.crv}","kty":"${jwk.kty}","x":"${jwk.x}","y":"${jwk.y}"}`)));
 }
 
 // ---------- in-memory state (disposable) --------------------------------------
 const users = new Map();        // userId -> { userId, username, displayName }
-const credsById = new Map();    // credId(b64url) -> { userId, spki(Buffer), alg }
-const liveNonces = new Map();   // nonce(b64url) -> issuedAt  (one-time, short-lived)
-const sessions = new Map();     // token -> { userId, jkt, at }
-const seenJti = new Map();      // jti -> exp  (DPoP replay cache)
+const credsById = new Map();    // credId(b64url) -> { userId, spki(Buffer), alg, jkt }
+const loginNonces = new Map();  // nonce -> issuedAt  (login ceremony, one-time)
+const popNonces = new Map();    // nonce -> issuedAt  (per-request proof, one-time)
+const sessions = new Map();     // token -> { userId, credId, jkt, at }
 
 const now = () => Date.now();
 setInterval(() => {
   const t = now();
-  for (const [n, at] of liveNonces) if (t - at > 120000) liveNonces.delete(n);
-  for (const [j, exp] of seenJti) if (t > exp) seenJti.delete(j);
+  for (const m of [loginNonces, popNonces]) for (const [n, at] of m) if (t - at > 120000) m.delete(n);
 }, 30000).unref();
 
 // ---------- http plumbing -----------------------------------------------------
-const json = (res, code, body, extra = {}) => {
-  res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', ...extra });
-  res.end(JSON.stringify(body));
-};
+const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => r(d)); });
 async function serveFile(res, file, type = 'text/html; charset=utf-8') {
   try { res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' }); res.end(await readFile(path.join(__dirname, 'public', file))); }
@@ -82,11 +80,8 @@ async function serveFile(res, file, type = 'text/html; charset=utf-8') {
 const cors = (res) => {
   res.setHeader('access-control-allow-origin', VICTIM_ORIGIN);
   res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type,authorization,dpop');
+  res.setHeader('access-control-allow-headers', 'content-type,authorization,x-passkey-proof');
 };
-
-// Attacker-side reverse proxy to the victim RP, rewriting Host/Origin so the RP validates
-// the relayed calls as if they came from the victim origin (mirrors the attack demo's proxy).
 function proxy(req, res) {
   const headers = { ...req.headers, host: RP_HOST };
   if (headers.origin) headers.origin = VICTIM_ORIGIN;
@@ -98,47 +93,19 @@ function proxy(req, res) {
   req.pipe(p);
 }
 
-// ---------- DPoP proof verification (RFC 9449, ES256 only) ---------------------
-async function verifyDpopProof(proof, { htm, htu, expectedJkt }) {
-  if (!proof) return { ok: false, why: 'missing DPoP proof' };
-  const parts = proof.split('.');
-  if (parts.length !== 3) return { ok: false, why: 'malformed proof' };
-  let header, claims;
-  try { header = JSON.parse(fromB64url(parts[0])); claims = JSON.parse(fromB64url(parts[1])); }
-  catch { return { ok: false, why: 'unparseable proof' }; }
-  if (header.typ !== 'dpop+jwt' || header.alg !== 'ES256' || !header.jwk) return { ok: false, why: 'bad header' };
-  const jkt = await jwkThumbprint(header.jwk);
-  if (expectedJkt && jkt !== expectedJkt) return { ok: false, why: 'proof key is not the bound key' };
-  if (claims.htm !== htm || claims.htu !== htu) return { ok: false, why: 'htm/htu mismatch' };
-  if (Math.abs(Math.floor(now() / 1000) - (claims.iat || 0)) > 60) return { ok: false, why: 'stale proof' };
-  if (!claims.jti || seenJti.has(claims.jti)) return { ok: false, why: 'replayed proof' };
-  const key = await importEcVerifyKeyJwk(header.jwk);
-  const ok = await subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key,
-    fromB64url(parts[2]), Buffer.from(parts[0] + '.' + parts[1]));
-  if (!ok) return { ok: false, why: 'bad proof signature' };
-  seenJti.set(claims.jti, now() + 120000);
-  return { ok: true, jkt };
-}
-
 // ---------- WebAuthn assertion verification -----------------------------------
-async function verifyAssertion({ assertion, dpopPublicJwk }) {
+// Verifies the signature over `expectedChallenge` by a known credential; returns the credId.
+async function verifyAssertion(assertion, expectedChallenge, { requireCredId } = {}) {
   const cred = credsById.get(assertion.rawId);
   if (!cred) return { ok: false, why: 'unknown credential' };
+  if (requireCredId && assertion.rawId !== requireCredId) return { ok: false, why: 'wrong credential for this session' };
   if (cred.alg !== -7) return { ok: false, why: 'only ES256 credentials in this PoC' };
 
   const clientDataJSON = fromB64url(assertion.response.clientDataJSON);
   let cData; try { cData = JSON.parse(clientDataJSON.toString('utf8')); } catch { return { ok: false, why: 'bad clientData' }; }
   if (cData.type !== 'webauthn.get') return { ok: false, why: 'wrong clientData type' };
   if (cData.origin !== VICTIM_ORIGIN) return { ok: false, why: `origin ${cData.origin}` };
-
-  // The binding check: the signed challenge must equal SHA256(ourNonce + "." + jkt) for the
-  // DPoP key we were handed, AND ourNonce must be a live, unspent nonce we issued.
-  const jkt = await jwkThumbprint(dpopPublicJwk);
-  let matchedNonce = null;
-  for (const nonce of liveNonces.keys()) {
-    if (b64url(sha256(Buffer.from(nonce + '.' + jkt))) === cData.challenge) { matchedNonce = nonce; break; }
-  }
-  if (!matchedNonce) return { ok: false, why: 'challenge not bound to this DPoP key (or nonce expired/spent)' };
+  if (cData.challenge !== expectedChallenge) return { ok: false, why: 'challenge mismatch' };
 
   const authData = fromB64url(assertion.response.authenticatorData);
   if (!sha256(Buffer.from(RP_ID)).equals(authData.subarray(0, 32))) return { ok: false, why: 'rpIdHash mismatch' };
@@ -148,10 +115,8 @@ async function verifyAssertion({ assertion, dpopPublicJwk }) {
   const rawSig = derToRawEcdsa(fromB64url(assertion.response.signature));
   const key = await importEcVerifyKeySpki(cred.spki);
   const ok = await subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, rawSig, signed);
-  if (!ok) return { ok: false, why: 'bad assertion signature' };
-
-  liveNonces.delete(matchedNonce); // one-time
-  return { ok: true, userId: cred.userId, jkt };
+  if (!ok) return { ok: false, why: 'bad signature' };
+  return { ok: true, cred };
 }
 
 // ---------- server ------------------------------------------------------------
@@ -176,12 +141,11 @@ const server = http.createServer(async (req, res) => {
     if (!b.username) return json(res, 400, { error: 'username required' });
     const userId = b64url(sha256(Buffer.from('u:' + b.username))).slice(0, 22);
     users.set(userId, { userId, username: b.username, displayName: b.displayName || b.username });
-    const challenge = b64url(randomBytes(32)); liveNonces.set(challenge, now());
+    const challenge = b64url(randomBytes(32)); loginNonces.set(challenge, now());
     return json(res, 200, {
       challenge, rp: { id: RP_ID, name: 'Acme Workspace (defended)' },
       user: { id: userId, name: b.username, displayName: b.displayName || b.username },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-      // Usernameless login sends an empty allowCredentials, so the passkey must be discoverable.
       authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
     });
   }
@@ -190,36 +154,57 @@ const server = http.createServer(async (req, res) => {
     const c = b.credential;
     if (!c || c.publicKeyAlgorithm !== -7) return json(res, 400, { ok: false, error: 'need an ES256 credential' });
     if (!users.has(b.userId)) return json(res, 400, { ok: false, error: 'unknown user' });
-    credsById.set(c.rawId, { userId: b.userId, spki: fromB64url(c.publicKeySpki), alg: c.publicKeyAlgorithm });
+    const spki = fromB64url(c.publicKeySpki);
+    credsById.set(c.rawId, { userId: b.userId, spki, alg: c.publicKeyAlgorithm, jkt: await credThumbprint(spki) });
     return json(res, 200, { ok: true });
   }
 
   if (pth === '/login/start' && req.method === 'POST') {
-    const challenge = b64url(randomBytes(32)); liveNonces.set(challenge, now());
+    const challenge = b64url(randomBytes(32)); loginNonces.set(challenge, now());
     return json(res, 200, { challenge, rpId: RP_ID });
   }
   if (pth === '/login/finish' && req.method === 'POST') {
     const b = JSON.parse((await readBody(req)) || '{}');
-    if (!b.assertion || !b.dpopPublicJwk) return json(res, 400, { ok: false, error: 'assertion and dpopPublicJwk required' });
-    let v; try { v = await verifyAssertion(b); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
+    if (!b.assertion) return json(res, 400, { ok: false, error: 'assertion required' });
+    const challenge = (() => { try { return JSON.parse(fromB64url(b.assertion.response.clientDataJSON)).challenge; } catch { return null; } })();
+    if (!challenge || !loginNonces.has(challenge)) return json(res, 401, { ok: false, error: 'unknown or expired challenge' });
+    let v; try { v = await verifyAssertion(b.assertion, challenge); } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
     if (!v.ok) return json(res, 401, { ok: false, error: v.why });
+    loginNonces.delete(challenge);
     const token = b64url(randomBytes(24));
-    sessions.set(token, { userId: v.userId, jkt: v.jkt, at: now() });
-    // Note: finish intentionally does NOT demand possession here. The binding is cryptographic
-    // (the signed challenge committed to jkt), and enforcement happens at the resource below.
-    return json(res, 200, { ok: true, token, token_type: 'DPoP' });
+    // Bind the session to the credential that actually signed. The page supplies no key.
+    sessions.set(token, { userId: v.cred.userId, credId: b.assertion.rawId, jkt: v.cred.jkt, at: now() });
+    return json(res, 200, { ok: true, token, token_type: 'Passkey' });
   }
 
-  // Resource server: sender-constrained. Needs `Authorization: DPoP <token>` AND a fresh
-  // `DPoP:` proof whose key thumbprint equals the token's bound jkt.
+  // Per-request proof-of-possession nonce.
+  if (pth === '/api/pop-challenge' && req.method === 'POST') {
+    const nonce = b64url(randomBytes(32)); popNonces.set(nonce, now());
+    return json(res, 200, { nonce });
+  }
+
+  // Resource server: passkey-bound. Needs `Authorization: Passkey <token>` AND a fresh WebAuthn
+  // proof assertion (header `X-Passkey-Proof`) signed by the credential the session is bound to,
+  // over SHA256("GET <htu> <nonce>").
   if (pth === '/api/me') {
     const auth = req.headers['authorization'] || '';
-    const m = /^DPoP (.+)$/.exec(auth);
+    const m = /^Passkey (.+)$/.exec(auth);
     const sess = m && sessions.get(m[1]);
-    if (!sess) return json(res, 401, { error: 'no DPoP-bound session token' });
+    if (!sess) return json(res, 401, { error: 'no passkey-bound session token' });
+    const proofHdr = req.headers['x-passkey-proof'];
+    if (!proofHdr) return json(res, 401, { error: 'missing passkey proof (this session needs a fresh authenticator assertion per request)' });
+    let proof; try { proof = JSON.parse(fromB64url(String(proofHdr)).toString('utf8')); } catch { return json(res, 400, { error: 'unparseable proof' }); }
     const htu = VICTIM_ORIGIN + '/api/me';
-    const pv = await verifyDpopProof(req.headers['dpop'], { htm: req.method, htu, expectedJkt: sess.jkt });
-    if (!pv.ok) return json(res, 401, { error: 'DPoP proof rejected: ' + pv.why });
+    // The signed challenge must match one of our live pop nonces, bound to method + htu.
+    let matched = null;
+    const cd = (() => { try { return JSON.parse(fromB64url(proof.response.clientDataJSON)); } catch { return null; } })();
+    if (cd) for (const nonce of popNonces.keys()) {
+      if (b64url(sha256(Buffer.from('GET ' + htu + ' ' + nonce))) === cd.challenge) { matched = nonce; break; }
+    }
+    if (!matched) return json(res, 401, { error: 'proof not bound to this request (or nonce expired/spent)' });
+    let v; try { v = await verifyAssertion(proof, cd.challenge, { requireCredId: sess.credId }); } catch (e) { return json(res, 400, { error: e.message }); }
+    if (!v.ok) return json(res, 401, { error: 'proof rejected: ' + v.why });
+    popNonces.delete(matched);
     const u = users.get(sess.userId) || {};
     return json(res, 200, { userId: sess.userId, username: u.username, displayName: u.displayName, jkt: sess.jkt });
   }
@@ -237,7 +222,7 @@ async function deadDrop(req, res, pth) {
   if (pth === '/x/offer' && req.method === 'GET') { cors(res); return json(res, 200, offer || {}); }
   if (pth === '/x/assertion' && req.method === 'POST') {
     const b = JSON.parse((await readBody(req)) || '{}'); if (!b.assertion) return json(res, 400, { error: 'no assertion' });
-    drops.push({ assertion: b.assertion, dpopPublicJwk: b.dpopPublicJwk || null, at: now() }); cors(res); return json(res, 200, { ok: true });
+    drops.push({ assertion: b.assertion, at: now() }); cors(res); return json(res, 200, { ok: true });
   }
   if (pth === '/x/assertion' && req.method === 'GET') { cors(res); return json(res, 200, drops.shift() || {}); }
   if (pth === '/x/reset' && req.method === 'POST') { offer = null; drops.length = 0; cors(res); return json(res, 200, { ok: true }); }

@@ -1,6 +1,6 @@
 // Record victim and attacker tabs at the same size for a side-by-side DEFENDED clip, then
 // stitch them with ffmpeg (hstack) into videos/combined.mp4. Spawns its own servers.
-//   left  (victim)   : enroll, sign in DPoP-bound ("Welcome"), then the page is compromised
+//   left  (victim)   : enroll, sign in passkey-bound ("Welcome"), then the page is compromised
 //                      and relays the sign-in.
 //   right (attacker) : waiting, then "Session captured, but locked" when the stolen token is
 //                      refused by /api/me.
@@ -83,7 +83,7 @@ try {
   await vic.page.goto(`${APP}/login`, { waitUntil: 'domcontentloaded' });
   await sleep(2200); // login form left, "waiting" right
 
-  // Enroll + legit DPoP-bound sign-in (it works for the real user).
+  // Enroll + legit passkey-bound sign-in (it works for the real user).
   await vic.page.click('#setup summary'); await sleep(400);
   await vic.page.fill('#username', V.username); await sleep(400);
   await vic.page.click('#enroll');
@@ -91,7 +91,7 @@ try {
   await sleep(900);
   await vic.page.click('#go');
   await vic.page.waitForFunction(() => document.getElementById('home')?.style.display === 'block', null, { timeout: 20000 });
-  await sleep(3000); // hold on "Welcome" + bound jkt
+  await sleep(3000); // hold on "Welcome" + bound passkey
 
   // Page compromised: relay the sign-in to the attacker's waiting login.
   await vic.page.goto(`${APP}/login?drop=${encodeURIComponent(ATT)}`, { waitUntil: 'domcontentloaded' });

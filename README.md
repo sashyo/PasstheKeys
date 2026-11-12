@@ -4,11 +4,12 @@ On an already-breached login page, one victim passkey sign-in can be relayed so 
 attacker ends up logged in **as that user**. The attacker screen is a live dashboard of
 captured sessions. Passkeys stop phishing and remote replay; they do not protect a page
 that is already running the attacker's code. The reusable prize is the **unbound session
-token**, so the real fix is to bind it (DPoP / sender-constraining).
+token**, so the real fix is to sender-constrain it: bind the session to the passkey, below the
+page.
 
 This repo ships both halves: the **exploit** (below) and a **working fix** that makes the
 same relay useless, in [pocketid-demo/defended/](pocketid-demo/defended/). Jump to
-[The fix](#the-fix-sender-constrained-sessions-dpop).
+[The fix](#the-fix-passkey-bound-sessions).
 
 > Authorized demo use only: your own instance and disposable test users.
 
@@ -48,34 +49,35 @@ it, "Create an Account" only works for the first user (Pocket ID's setup).
 - `/x/stage`, `/x/drop`, `/x/sessions`, `/x/reset` are the attacker side. `/api/*` is
   Pocket ID.
 
-## The fix: sender-constrained sessions (DPoP)
+## The fix: passkey-bound sessions
 
-The attack wins because the session token is a bearer token: whoever holds it is the user.
-The fix is to **bind the session to a key the signing browser keeps**, so a relayed or stolen
-token is inert. A full working version lives in [pocketid-demo/defended/](pocketid-demo/defended/)
-(self-contained, zero-dependency relying party; [its README](pocketid-demo/defended/README.md)
-has the details, and [defended/flow.puml](pocketid-demo/defended/flow.puml) is the sequence
-diagram).
+The attack wins because the session token is a bearer token: whoever holds it is the user. The
+fix is to **bind the session to the passkey credential itself**, so a relayed token is inert. A
+full working version lives in [pocketid-demo/defended/](pocketid-demo/defended/) (self-contained,
+zero-dependency relying party; [its README](pocketid-demo/defended/README.md) has the details,
+and [defended/flow.puml](pocketid-demo/defended/flow.puml) is the sequence diagram).
 
-How it binds, in one line: a WebAuthn authenticator only signs `authenticatorData ||
-SHA256(clientDataJSON)`, and the challenge is the one field JS controls that is guaranteed to
-be inside that signature, so the binding goes in the nonce slot:
+The key must live **below the page**. This threat model is "the page is already running the
+attacker's code," so any key the page generates, derives (even via the WebAuthn PRF extension),
+or reads, the page can also hand to the attacker. The one key a compromised page can neither
+choose nor exfiltrate is the passkey credential's private key, which lives in the authenticator
+and only ever signs assertions. So that is the binding key:
 
-```
-signedChallenge = SHA256( serverNonce + "." + jkt )     # jkt = thumbprint of a DPoP key
-```
+- the server binds the session to the **public key of the credential that signed the login**
+  (the page supplies no key);
+- `/api/me` requires `Authorization: Passkey <token>` **and** a fresh proof-of-possession
+  assertion signed by that credential over `SHA256("GET <htu> <nonce>")` (one-time nonce).
 
-The browser's `PasskeyProvider` generates a **non-extractable** DPoP keypair (IndexedDB) and
-folds its thumbprint `jkt` into the signed challenge. The relying party checks the signed
-challenge commits to that key, **binds the session token to `jkt`**, and requires a fresh
-[RFC 9449](https://www.rfc-editor.org/rfc/rfc9449) DPoP proof on every resource call. Running
-the same relay against it: the attacker finishes the ceremony and mints a real token for the
-victim, but `/api/me` refuses it (`proof key is not the bound key`) because the private key
-never left the victim's browser; swapping in the attacker's own key breaks the challenge match
-and the login is rejected.
+Running the same relay against it: the attacker finishes the ceremony and mints a real token for
+the victim, but `/api/me` refuses it (`missing passkey proof`) because a request needs a fresh
+assertion from the victim's authenticator, which the attacker's machine does not have and the
+page cannot extract. A compromised page can coax at most one more user-approved, single-use
+proof out of the authenticator, never the key or a durable session.
 
-Pocket ID is upstream (`ghcr.io/pocket-id/pocket-id:latest`) and cannot be modified to bind
-its own sessions, so the defended flow is a relying party we own sitting next to it.
+Pocket ID is upstream (`ghcr.io/pocket-id/pocket-id:latest`) and cannot be modified to bind its
+own sessions, so the defended flow is a relying party we own sitting next to it. Requiring a
+passkey tap per request is heavy; a production system would amortize it (short-lived proof-bound
+tokens, or browser-level device binding such as DBSC).
 
 ```bash
 cd pocketid-demo/defended

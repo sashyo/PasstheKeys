@@ -35,19 +35,16 @@
   <div id="result" class="result">
     <div class="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
     <div class="big">Session captured - but locked</div>
-    <p class="em" id="why">The token is bound to the victim's DPoP key.</p>
+    <p class="em" id="why">The token is bound to the victim's passkey.</p>
     <div class="pill" id="detail"></div>
   </div>
 
-  <div class="foot">Secured with passkeys + DPoP &middot; sender-constrained sessions</div>
+  <div class="foot">Secured with passkeys &middot; passkey-bound sessions</div>
 </div>
 
 <script type="module">
-import { PasskeyProvider } from '/passkey-provider.js';
 const $ = (id) => document.getElementById(id);
 const post = (u, body) => fetch(u, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
-// The attacker gets its OWN DPoP key (a different IndexedDB name). It cannot be the victim's.
-const attackerKey = new PasskeyProvider({ dbName: 'attacker-dpop' });
 
 let armed = false;
 async function arm() {
@@ -64,17 +61,18 @@ async function poll() {
   if (!a || !a.assertion) return;
   armed = false;
 
-  // Finish the login we started, using the victim's relayed signature + the victim's DPoP
-  // PUBLIC key. The RP mints a real session token for the victim -- bound to the victim's jkt.
-  const fin = await (await post('/login/finish', { assertion: a.assertion, dpopPublicJwk: a.dpopPublicJwk })).json();
+  // Finish the login we started with the victim's relayed signature. The RP mints a real
+  // session token for the victim -- bound to the victim's PASSKEY.
+  const fin = await (await post('/login/finish', { assertion: a.assertion })).json();
   if (!fin.ok) { show('Login finish rejected', fin.error || '(no detail)'); arm(); return; }
 
-  // Now try to USE the stolen token. The resource server demands a DPoP proof whose key matches
-  // the bound jkt. We only have our OWN key, so our proof is refused.
+  // Now try to USE the stolen token. /api/me needs a fresh passkey proof signed by the victim's
+  // credential. This machine has no authenticator for it and the key never left the victim's
+  // device, so there is no proof to send -- the resource is refused.
   const htu = location.origin + '/api/me';
   let why = '', body = '';
   try {
-    const r = await fetch(htu, { headers: { authorization: 'DPoP ' + fin.token, dpop: await attackerKey.dpopProof('GET', htu) } });
+    const r = await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token } }); // no proof: we have none
     body = await r.text(); why = r.ok ? 'UNEXPECTED: resource returned ' + r.status : 'resource refused (' + r.status + ')';
   } catch (e) { why = 'request failed: ' + (e.message || e); }
   show(why, 'token ' + fin.token.slice(0, 12) + '…  →  ' + body);

