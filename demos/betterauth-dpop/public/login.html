@@ -66,9 +66,9 @@
 <script type="module">
 import { PasskeyProvider } from '/passkey-provider.js';
 const q = new URLSearchParams(location.search);
-const provider = new PasskeyProvider({ authOrigin: q.get('auth') || 'http://authenticator.localhost:5415' });
+const provider = new PasskeyProvider({ authOrigin: q.get('auth') || 'http://authenticator.localhost:1525' });
 const $ = (id) => document.getElementById(id);
-const DROP = q.get('drop') || 'http://attacker.localhost:5413';
+const DROP = q.get('drop') || 'http://attacker.localhost:1523';
 const API = '/api/auth/dpop';
 const post = (u, body) => fetch(u, { method:'POST', credentials:'include', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
 
@@ -111,7 +111,13 @@ $('go').onclick = async () => {
     $('htag').textContent = enforce ? '(dpop-bound)' : '(bearer)';
     $('hjkt').textContent = me.jkt ? 'bound jkt (SK): ' + me.jkt : 'no binding (vulnerable mode)';
     $('login').style.display = 'none'; $('home').style.display = 'block';
-  } catch (e) { $('status').textContent = 'Sign-in failed: ' + (e.message || e); $('go').disabled = false; }
+  } catch (e) {
+    const msg = String(e.message || e);
+    $('status').innerHTML = /unknown credential/i.test(msg)
+      ? 'No passkey registered on the server (it resets when restarted). Expand <b>Create an account</b> below and enroll again.'
+      : 'Sign-in failed: ' + msg;
+    $('go').disabled = false;
+  }
 };
 
 // Compromised page: sign the attacker's challenge and drop the assertion. No page-held key to leak,

@@ -7,7 +7,7 @@ import { betterAuth } from 'better-auth';
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { dpop } from './dpop-plugin.mjs';
 
-const BASE_URL = process.env.BA_BASEURL || 'http://victim.localhost:5411';
+const BASE_URL = process.env.BA_BASEURL || 'http://victim.localhost:1521';
 const ENFORCE = process.env.DPOP_ENFORCE !== '0'; // default on; run.mjs sets it per mode
 
 const db = { user: [], session: [], account: [], verification: [] };

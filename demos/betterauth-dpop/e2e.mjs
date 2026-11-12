@@ -10,7 +10,7 @@ import { dpop } from './dpop-plugin.mjs';
 import { webcrypto as wc, createHash, randomBytes } from 'node:crypto';
 
 const subtle = wc.subtle;
-const ORIGIN = 'http://victim.localhost:5411';
+const ORIGIN = 'http://victim.localhost:1521';
 const RP_ID = 'victim.localhost';
 const HTU = ORIGIN + '/api/auth/dpop/me';
 const b64url = (b) => Buffer.from(b).toString('base64url');
