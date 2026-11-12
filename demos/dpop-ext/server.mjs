@@ -19,8 +19,8 @@ const subtle = wc.subtle;
 const ROLE = ['attacker', 'authenticator'].includes(process.env.ROLE) ? process.env.ROLE : 'victim';
 const DEFAULT_PORT = { victim: 1521, attacker: 1523, authenticator: 1525 }[ROLE];
 const PORT = Number(process.env.PORT || DEFAULT_PORT);
-const VICTIM_ORIGIN = process.env.VICTIM_ORIGIN || 'http://localhost:1521';
-const AUTH_ORIGIN = process.env.AUTH_ORIGIN || 'http://localhost:1525';
+const VICTIM_ORIGIN = process.env.VICTIM_ORIGIN || 'http://victim.localhost:1521';
+const AUTH_ORIGIN = process.env.AUTH_ORIGIN || 'http://authenticator.localhost:1525';
 const RP_HOST = new URL(VICTIM_ORIGIN).host;
 const RP_ID = new URL(VICTIM_ORIGIN).hostname;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,7 +67,10 @@ function proxy(req, res) {
   if (headers.origin) headers.origin = VICTIM_ORIGIN;
   if (headers.referer) headers.referer = VICTIM_ORIGIN + '/';
   const target = new URL(VICTIM_ORIGIN);
-  const p = http.request({ host: target.hostname, port: target.port, method: req.method, path: req.url, headers },
+  // Connect over loopback instead of resolving the victim hostname: *.localhost names are not
+  // guaranteed to resolve in Node's DNS on every OS, but both servers are on 127.0.0.1. The
+  // rewritten Host/Origin headers are what the RP actually checks.
+  const p = http.request({ host: '127.0.0.1', port: target.port, method: req.method, path: req.url, headers },
     (pr) => { res.writeHead(pr.statusCode, pr.headers); pr.pipe(res); });
   p.on('error', () => json(res, 502, { error: 'victim RP unreachable' }));
   req.pipe(p);
@@ -109,6 +112,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---- victim RP ----
+  // The page is served on any Host, but the dpop flow pins the WebAuthn clientData origin to
+  // VICTIM_ORIGIN (victim.localhost). Opening the old localhost URL would load the page and then
+  // fail at login with an origin mismatch, so redirect wrong-host page loads to the canonical host.
+  if (req.method === 'GET' && req.headers.host !== RP_HOST && (pth === '/' || pth === '/login')) {
+    res.writeHead(302, { location: `${VICTIM_ORIGIN}/login` });
+    return res.end();
+  }
   if (pth === '/') { res.writeHead(302, { location: '/login' }); return res.end(); }
   if (pth === '/login') return serveFile(res, 'login.html');
   if (pth === '/passkey-provider.js') return serveFile(res, 'passkey-provider.js', 'text/javascript');
@@ -192,4 +202,21 @@ async function deadDrop(req, res, pth) {
   cors(res); return json(res, 404, { error: 'not found' });
 }
 
-server.listen(PORT, () => console.log(`dpop-ext ${ROLE} on http://localhost:${PORT}  (RP ${VICTIM_ORIGIN}, auth ${AUTH_ORIGIN})`));
+// Fail loudly if the port is taken: a leftover server from an earlier run would otherwise keep
+// answering with stale code (old origins/CORS), which looks like a baffling bug in the browser.
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use - an earlier demo server is probably still running on it.`);
+    console.error(`Stop it and retry:  pkill -f dpop-ext   (or free port ${PORT} yourself)`);
+    process.exit(1);
+  }
+  throw e;
+});
+
+const HOST = { victim: 'victim.localhost', attacker: 'attacker.localhost', authenticator: 'authenticator.localhost' }[ROLE];
+server.listen(PORT, () => {
+  // run.mjs prints its own tidy summary and sets QUIET=1, so stay silent there. When a server is
+  // started on its own (the README's `node server.mjs`), print where it is listening.
+  if (process.env.QUIET === '1') return;
+  console.log(`dpop-ext ${ROLE} on http://${HOST}:${PORT}  (RP ${VICTIM_ORIGIN}, auth ${AUTH_ORIGIN})`);
+});

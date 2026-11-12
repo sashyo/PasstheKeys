@@ -8,12 +8,15 @@
 // Start the RP first:  ROLE=victim PORT=1521 node server.mjs
 import { webcrypto as wc, createHash, randomBytes } from 'node:crypto';
 const subtle = wc.subtle;
-const ORIGIN = process.env.VICTIM_ORIGIN || 'http://localhost:1521';
+// ORIGIN is what the RP pins (the WebAuthn clientData origin, RP_ID and htu). BASE is only where we
+// connect: loopback, so this works even where Node's DNS does not resolve *.localhost names.
+const ORIGIN = process.env.VICTIM_ORIGIN || 'http://victim.localhost:1521';
+const BASE = process.env.VICTIM_BASE || `http://127.0.0.1:${new URL(ORIGIN).port || 1521}`;
 const RP_ID = new URL(ORIGIN).hostname;
 const HTU = ORIGIN + '/api/me';
 const b64url = (b) => Buffer.from(b).toString('base64url');
 const sha256 = (b) => createHash('sha256').update(b).digest();
-const post = async (p, body) => (await fetch(ORIGIN + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) })).json();
+const post = async (p, body) => (await fetch(BASE + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) })).json();
 
 const genKey = () => subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
 const rawPub = async (k) => Buffer.from(await subtle.exportKey('raw', k.publicKey));
@@ -60,7 +63,7 @@ async function popProof(session) {
   const proof = await session.proof(b64url(sha256(Buffer.from('GET ' + HTU + ' ' + nonce))));
   return b64url(Buffer.from(JSON.stringify(proof)));
 }
-const getMe = (token, proofB64) => fetch(HTU, { headers: { authorization: 'Passkey ' + token, ...(proofB64 ? { 'x-passkey-proof': proofB64 } : {}) } });
+const getMe = (token, proofB64) => fetch(BASE + '/api/me', { headers: { authorization: 'Passkey ' + token, ...(proofB64 ? { 'x-passkey-proof': proofB64 } : {}) } });
 
 let failed = 0; const check = (ok, msg) => { if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${msg}`); };
 
