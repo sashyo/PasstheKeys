@@ -12,17 +12,17 @@ Everything here is **Node-only, no Docker**.
 
 **The fix** (the point of this repo) - sender-constrain the session so a stolen or relayed token is inert:
 
-- **[Passkey-bound sessions](pocketid-demo/defended/)** - runs in browsers today: the session binds
+- **[Passkey-bound sessions](demos/defended/)** - runs in browsers today: the session binds
   to the passkey credential that signed the login, and every request needs a fresh passkey proof.
-- **[`dpop` WebAuthn extension](pocketid-demo/dpop-ext/)** - a prototype extension where the
+- **[`dpop` WebAuthn extension](demos/dpop-ext/)** - a prototype extension where the
   authenticator mints and *names* a fresh per-session key inside the signed `authenticatorData`,
-  closing both key exfiltration and key substitution. See the [SPEC](pocketid-demo/dpop-ext/SPEC.md)
-  and the [flow](pocketid-demo/dpop-ext/flow.puml).
+  closing both key exfiltration and key substitution. See the [SPEC](demos/dpop-ext/SPEC.md)
+  and the [flow](demos/dpop-ext/flow.puml).
 
 **The exploit** it defends against (two layers):
 
 - **Frontend takeover** - a compromised login page relays your passkey sign-in and the attacker
-  lands in your account: [pocketid-demo/betterauth-exploit/](pocketid-demo/betterauth-exploit/).
+  lands in your account: [demos/betterauth-exploit/](demos/betterauth-exploit/).
 - **Backend token replay** - the unbound session is a bearer token: leak it server-side and replay
   it anywhere. The fix makes it useless without the bound key.
 
@@ -32,15 +32,15 @@ Everything here is **Node-only, no Docker**.
 
 | Directory | What | Run |
 |---|---|---|
-| [betterauth-exploit/](pocketid-demo/betterauth-exploit/) | the attack, over [Better Auth](https://better-auth.com) (SQLite, no Docker) | `npm run exploit:migrate && npm run exploit` |
-| [defended/](pocketid-demo/defended/) | fix 1: passkey-bound sessions | `npm run defended` |
-| [dpop-ext/](pocketid-demo/dpop-ext/) | fix 2: the `dpop` WebAuthn extension | `npm run ext` |
+| [betterauth-exploit/](demos/betterauth-exploit/) | the attack, over [Better Auth](https://better-auth.com) (SQLite, no Docker) | `npm run exploit:migrate && npm run exploit` |
+| [defended/](demos/defended/) | fix 1: passkey-bound sessions | `npm run defended` |
+| [dpop-ext/](demos/dpop-ext/) | fix 2: the `dpop` WebAuthn extension | `npm run ext` |
 
 ## The exploit (Better Auth, Docker-free)
 
 ```bash
 npm install                                        # better-auth, @better-auth/passkey, better-sqlite3
-cd pocketid-demo/betterauth-exploit
+cd demos/betterauth-exploit
 node migrate.mjs                                   # create the SQLite tables (once)
 ROLE=victim   PORT=5411 node server.mjs            # Acme on http://localhost:5411
 ROLE=attacker PORT=5413 VICTIM_ORIGIN=http://localhost:5411 node server.mjs   # attacker on http://127.0.0.1:5413
@@ -54,7 +54,7 @@ ROLE=attacker PORT=5413 VICTIM_ORIGIN=http://localhost:5411 node server.mjs   # 
 Better Auth issues the login challenge in a signed cookie; the attacker GETs it, the victim's
 backdoored page signs it, and the attacker POSTs the assertion to mint the victim's session. The
 victim runs on `localhost` and the attacker on `127.0.0.1` so their cookie jars stay separate.
-Details in [its README](pocketid-demo/betterauth-exploit/README.md).
+Details in [its README](demos/betterauth-exploit/README.md).
 
 ## The fix: passkey-bound sessions
 
@@ -74,15 +74,15 @@ assertions. So that is the binding key:
 Run the same relay against it and the attacker mints a real token but `/api/me` refuses it
 (`missing passkey proof`): the proof needs a fresh assertion from the victim's authenticator, which
 the attacker's machine does not have and the page cannot extract. Full write-up and a headless
-proof (`node e2e.mjs`) in [pocketid-demo/defended/](pocketid-demo/defended/).
+proof (`node e2e.mjs`) in [demos/defended/](demos/defended/).
 
 ## The fix, taken further: the `dpop` WebAuthn extension
 
 Passkey-bound sessions reuse the long-lived login credential. The
-[`dpop` extension](pocketid-demo/dpop-ext/) prototypes having the **authenticator mint a fresh
+[`dpop` extension](demos/dpop-ext/) prototypes having the **authenticator mint a fresh
 per-session key and name it** inside the signed `authenticatorData`, so the binding key is neither
-readable nor choosable by the page. See the [SPEC](pocketid-demo/dpop-ext/SPEC.md),
-[flow](pocketid-demo/dpop-ext/flow.puml), and a headless proof (`node e2e.mjs`).
+readable nor choosable by the page. See the [SPEC](demos/dpop-ext/SPEC.md),
+[flow](demos/dpop-ext/flow.puml), and a headless proof (`node e2e.mjs`).
 
 ## Prerequisites
 

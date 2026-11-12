@@ -1,0 +1,40 @@
+@startuml PasstheKeysDefended
+title PasstheKeys - defended (passkey-bound DPoP)
+skinparam shadowing false
+skinparam defaultFontName sans-serif
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 16
+skinparam BoxPadding 12
+actor "Victim" as V
+box Relay Party domain
+participant "Compromised\nfrontend" as VP
+participant "Server /\nIdP" as AP
+end box
+participant "Attacker server" as S
+actor "Attacker" as A
+
+== Attacker arms, in its own tab of the site ==
+A -> AP : Login
+activate AP
+AP --> A : nonce
+A -> S : nonce
+activate S
+== Victim tries to log in; signs the attacker's nonce ==
+V -> VP : Login
+VP -> S
+S --> VP : nonce
+VP -> V : Passkey?
+V --> VP : assertion
+VP -> S : assertion
+VP -> V : Fail
+== Attacker finishes the login ==
+S --> A : assertion
+deactivate S
+A -> AP : /login/finish
+deactivate AP
+AP --> A : **access_token** (DPoP-bound to the passkey)
+== Attacker tries to use it, and is stuck ==
+A -> AP : /api/me + DPoP proof?
+note right of A : DPoP proof = a fresh passkey assertion,\nkey is in the victim's authenticator
+AP --> A : 401, no DPoP proof
+@enduml
