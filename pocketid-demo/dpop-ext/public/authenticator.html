@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>authenticator</title></head>
+<body>
+<!--
+  Simulated extended authenticator implementing the `dpop` extension (see ../SPEC.md). Served
+  from its OWN origin and embedded as an iframe by the relying-party page. Same-origin policy
+  makes everything below unreadable to that page: it can only postMessage these operations, never
+  read the credential key or SK. Private keys are generated non-extractable, so even this page
+  cannot export them. This boundary stands in for an authenticator's hardware boundary.
+
+  Ops (parent -> iframe {id, op, args}):
+    register {username}            -> { credId, publicKey }          (identity passkey)
+    login    {rpId, origin, challenge} -> { assertion, handle }      (names a fresh SK in signed authData)
+    proof    {handle, rpId, origin, challenge} -> { proof }          (signs with that session's SK)
+-->
+<script>
+const subtle = crypto.subtle;
+const te = new TextEncoder();
+const b64url = (buf) => { const b = new Uint8Array(buf); let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const rndId = () => b64url(crypto.getRandomValues(new Uint8Array(16)).buffer);
+const sha256 = async (b) => new Uint8Array(await subtle.digest('SHA-256', b));
+const rawPub = async (k) => new Uint8Array(await subtle.exportKey('raw', k.publicKey));
+const sign = async (priv, data) => new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, priv, data));
+const concat = (...arrs) => { let n = 0; for (const a of arrs) n += a.length; const o = new Uint8Array(n); let i = 0; for (const a of arrs) { o.set(a, i); i += a.length; } return o; };
+
+// Credentials persist in THIS origin's IndexedDB (the authenticator's store), unreadable to the RP page.
+function idb() { return new Promise((res, rej) => { const r = indexedDB.open('dpop-authn', 1); r.onupgradeneeded = () => r.result.createObjectStore('creds'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function putCred(credId, rec) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('creds', 'readwrite').objectStore('creds').put(rec, credId); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
+async function anyCred() { const db = await idb(); return new Promise((res) => { const t = db.transaction('creds', 'readonly').objectStore('creds').getAll(); t.onsuccess = () => res(t.result[0] || null); t.onerror = () => res(null); }); }
+
+const SK = new Map(); // handle -> { skPriv (non-extractable CryptoKey) }
+
+async function authData(rpId, flags, skPub) {
+  const parts = [await sha256(te.encode(rpId)), new Uint8Array([flags]), new Uint8Array([0, 0, 0, 1])];
+  if (skPub) parts.push(skPub);
+  return concat(...parts);
+}
+const clientData = (challenge, origin) => te.encode(JSON.stringify({ type: 'webauthn.get', challenge, origin }));
+
+const ops = {
+  async register({ username }) {
+    const pair = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+    const credId = rndId();
+    await putCred(credId, { credId, username, priv: pair.privateKey, pub: pair.publicKey });
+    return { credId, publicKey: b64url(await rawPub(pair)) };
+  },
+  async login({ rpId, origin, challenge }) {
+    const cred = await anyCred();
+    if (!cred) throw new Error('no credential enrolled');
+    const sk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']); // fresh per login
+    const skPub = await rawPub(sk);
+    const ad = await authData(rpId, 0x81, skPub);            // 0x80 dpop | 0x01 user-present
+    const cd = clientData(challenge, origin);
+    const sig = await sign(cred.priv, concat(ad, await sha256(cd)));
+    const handle = rndId(); SK.set(handle, sk.privateKey);
+    return { handle, assertion: {
+      id: cred.credId, rawId: cred.credId, type: 'public-key', clientExtensionResults: {},
+      response: { clientDataJSON: b64url(cd), authenticatorData: b64url(ad), signature: b64url(sig), userHandle: null },
+    } };
+  },
+  async proof({ handle, rpId, origin, challenge }) {
+    const skPriv = SK.get(handle);
+    if (!skPriv) throw new Error('no session key for handle');
+    const ad = await authData(rpId, 0x01, null);
+    const cd = clientData(challenge, origin);
+    const sig = await sign(skPriv, concat(ad, await sha256(cd)));
+    return { proof: { type: 'public-key', response: { clientDataJSON: b64url(cd), authenticatorData: b64url(ad), signature: b64url(sig), userHandle: null } } };
+  },
+};
+
+addEventListener('message', async (e) => {
+  const { id, op, args } = e.data || {};
+  if (!id || !ops[op]) return;
+  try { e.source.postMessage({ id, ok: true, result: await ops[op](args || {}) }, e.origin); }
+  catch (err) { e.source.postMessage({ id, ok: false, error: String(err && err.message || err) }, e.origin); }
+});
+// Announce readiness to the embedding page.
+if (parent !== window) parent.postMessage({ dpopAuthReady: true }, '*');
+</script>
+</body>
+</html>
