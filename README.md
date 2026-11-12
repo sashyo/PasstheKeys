@@ -1,4 +1,6 @@
-# Passkey login-takeover: the exploit and the fix
+<p align="center"><img src="logo.svg" alt="Pass the Keys" width="170"></p>
+<h1 align="center">Pass the Keys</h1>
+<p align="center"><b>Passkey login-takeover: the exploit and the fix</b></p>
 
 A passkey sign-in on a **compromised login page** can be relayed so an attacker ends up logged in
 **as that user**. Passkeys stop phishing and remote replay; they do not protect a page already
