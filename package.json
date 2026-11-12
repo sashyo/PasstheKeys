@@ -10,7 +10,8 @@
     "defended": "node pocketid-demo/defended/server.mjs",
     "defended:e2e": "node pocketid-demo/defended/e2e.mjs",
     "defended:e2e:browser": "node pocketid-demo/defended/e2e-browser.mjs",
-    "defended:record": "node pocketid-demo/defended/record.mjs"
+    "defended:record": "node pocketid-demo/defended/record.mjs",
+    "defended:record:split": "node pocketid-demo/defended/record-split.mjs"
   },
   "devDependencies": {
     "playwright": "1.65.0"
