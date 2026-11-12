@@ -1,7 +1,7 @@
 // Browser end-to-end check of the defended demo, with a Chrome virtual authenticator.
 // Spawns its own victim RP + attacker site on dedicated ports, then runs two scenarios:
 //   1. Legit : victim enrolls a discoverable passkey, signs in, and the resource page loads
-//              via a DPoP proof -> lands on "Welcome", bound jkt shown.
+//              via a passkey proof -> lands on "Welcome", bound passkey shown.
 //   2. Relay : victim runs the "compromised page" relay; the attacker tab finishes the login
 //              and the stolen token is refused by /api/me -> "Session captured - but locked".
 // Needs Playwright (dev only):  npm install && npx playwright install chromium
@@ -65,7 +65,7 @@ try {
 
   browser = await chromium.launch({ headless: true });
 
-  // ---- 1) Legit DPoP-bound sign-in -------------------------------------------
+  // ---- 1) Legit passkey-bound sign-in -------------------------------------------
   {
     const vic = await newCtx(browser, true, 'victim-legit');
     await enroll(vic.page, 'alice' + Date.now().toString().slice(-5));
@@ -74,7 +74,7 @@ try {
     const name = (await vic.page.textContent('#hname'))?.trim();
     const jkt = (await vic.page.textContent('#hjkt'))?.trim();
     log('legit sign-in ->', JSON.stringify({ name, jkt }));
-    pass1 = /^Welcome,/.test(name || '') && /^bound jkt: .+/.test(jkt || '');
+    pass1 = /^Welcome,/.test(name || '') && /^bound to passkey: .+/.test(jkt || '');
     await vic.ctx.close();
   }
 
@@ -99,8 +99,8 @@ try {
     const why = (await att.page.textContent('#why'))?.trim();
     const detail = (await att.page.textContent('#detail'))?.trim();
     log('attacker outcome ->', JSON.stringify({ why, detail }));
-    // The ceremony completed (token minted) but the resource refused the attacker's proof.
-    pass2 = /refused \(401\)/.test(why || '') && /not the bound key/.test(detail || '');
+    // The ceremony completed (token minted) but the resource refused: no passkey proof.
+    pass2 = /refused \(401\)/.test(why || '') && /missing passkey proof/.test(detail || '');
     await att.ctx.close(); await vic.ctx.close();
   }
 } catch (e) {
@@ -109,7 +109,7 @@ try {
   if (browser) await browser.close();
   victimSrv.kill(); attackerSrv.kill();
   const ok = pass1 && pass2;
-  console.log(`\n1 legit  : ${pass1 ? 'PASS' : 'FAIL'}  (DPoP-bound sign-in works for the real user)`);
+  console.log(`\n1 legit  : ${pass1 ? 'PASS' : 'FAIL'}  (passkey-bound sign-in works for the real user)`);
   console.log(`2 relay  : ${pass2 ? 'PASS' : 'FAIL'}  (relayed login mints a token, but /api/me refuses it)`);
   console.log(ok ? '\nAll browser checks passed' : '\nFAIL (see above)');
   process.exit(ok ? 0 : 1);
