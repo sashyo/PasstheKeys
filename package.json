@@ -1,23 +1,20 @@
 {
-  "name": "pocketid-login-takeover-demo",
+  "name": "passkey-login-takeover-demo",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Passkey login-takeover demo against a local Pocket ID instance. Authorized demo and self-testing only.",
+  "description": "Passkey login-takeover exploit (Better Auth) and two sender-constraining fixes. Authorized demo and self-testing only.",
   "scripts": {
-    "start": "node pocketid-demo/server.mjs",
-    "e2e": "node pocketid-demo/e2e.mjs",
+    "exploit:migrate": "node pocketid-demo/betterauth-exploit/migrate.mjs",
+    "exploit": "node pocketid-demo/betterauth-exploit/server.mjs",
     "defended": "node pocketid-demo/defended/server.mjs",
-    "defended:e2e": "node pocketid-demo/defended/e2e.mjs",
-    "defended:e2e:browser": "node pocketid-demo/defended/e2e-browser.mjs",
-    "defended:record": "node pocketid-demo/defended/record.mjs",
-    "defended:record:split": "node pocketid-demo/defended/record-split.mjs",
+    "defended:test": "node pocketid-demo/defended/e2e.mjs",
     "ext": "node pocketid-demo/dpop-ext/server.mjs",
-    "ext:e2e": "node pocketid-demo/dpop-ext/e2e.mjs",
-    "ext:e2e:browser": "node pocketid-demo/dpop-ext/e2e-browser.mjs",
-    "ext:record:split": "node pocketid-demo/dpop-ext/record-split.mjs"
+    "ext:test": "node pocketid-demo/dpop-ext/e2e.mjs"
   },
-  "devDependencies": {
-    "playwright": "1.65.0"
+  "dependencies": {
+    "better-auth": "^1.7.21",
+    "@better-auth/passkey": "^1.7.21",
+    "better-sqlite3": "^12.11.1"
   }
 }

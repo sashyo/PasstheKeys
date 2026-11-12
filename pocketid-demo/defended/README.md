@@ -41,11 +41,10 @@ is inert. A compromised page can coax at most **one more** user-approved proof o
 authenticator (single-use, one request), never the key itself and never a durable, relayable
 session.
 
-> Scope: self-contained zero-dependency RP (ES256 credentials only). Pocket ID is upstream and
-> cannot be modified to bind its own sessions, so the defended flow is a relying party we own
-> sitting next to it. Requiring a passkey tap per request is heavy; a production system would
-> amortize it (short-lived proof-bound tokens, or browser-level device binding such as DBSC).
-> Authorized demo use only: your own machine and disposable test users.
+> Scope: self-contained zero-dependency RP (ES256 credentials only) - its own relying party, so
+> the binding lives in code we control. Requiring a passkey tap per request is heavy; a production
+> system would amortize it (short-lived proof-bound tokens, or browser-level device binding such
+> as DBSC). Authorized demo use only: your own machine and disposable test users.
 
 ## Run
 
@@ -77,27 +76,9 @@ Expected: legit login + proof returns the user; the relay mints a token but `/ap
 refused with no proof; and a valid proof from a **different** passkey is refused for the
 victim's session.
 
-## Browser check + demo video (Playwright, virtual authenticator)
+## Diagram
 
-These spawn their own victim RP + attacker site on ports 14021/14023, so nothing else needs
-to be running.
-
-```bash
-npm install && npx playwright install chromium   # dev only
-node defended/e2e-browser.mjs    # headful-equivalent: legit sign-in passes, relay stays locked
-node defended/record.mjs         # writes defended/videos/{victim,attacker}.webm
-node defended/record-split.mjs   # same-size panes + stitched videos/combined.mp4
-```
-
-`victim.webm` shows one person enrolling, signing in passkey-bound ("Welcome"), then their page
-being compromised and relaying the sign-in. `attacker.webm` shows that tab flipping to
-**"Session captured, but locked."**
-
-`record-split.mjs` records both tabs at the same size (`split-victim.webm`,
-`split-attacker.webm`) and, if a full `ffmpeg` is on `PATH`, stitches them side by side into
-`videos/combined.mp4` (victim left, attacker right). Playwright's bundled ffmpeg is a minimal
-vpx-only build with no `hstack` filter, so it is not used; without a full ffmpeg the two panes
-are written and the exact stitch command is printed. All of `videos/` is gitignored.
+[flow.puml](flow.puml) is the sequence diagram (render with any PlantUML tool).
 
 ## Diagram
 

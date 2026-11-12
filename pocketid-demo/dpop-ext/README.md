@@ -47,27 +47,21 @@ ROLE=authenticator PORT=1525 node server.mjs
 
 ## Checks
 
+Headless model (emulated authenticator in Node), asserts the three outcomes:
+
 ```bash
-# Headless model (emulated authenticator in Node):
 ROLE=victim PORT=1521 node server.mjs      # in one shell
 node e2e.mjs                                # in another
-
-# Browser demo (separate-origin authenticator iframe; spawns its own servers):
-npm install && npx playwright install chromium
-node e2e-browser.mjs
 ```
 
-Headless asserts: legit login binds to the signed `SK` and `/api/me` unlocks with an `SK` proof;
-the relay mints a token but `/api/me` is refused; and an assertion carrying the attacker's `SK`
-(self-signed by an unregistered credential) is rejected. The browser demo asserts legit sign-in
-works and the relay stays locked.
+Legit login binds to the signed `SK` and `/api/me` unlocks with an `SK` proof; the relay mints a
+token but `/api/me` is refused; and an assertion carrying the attacker's `SK` (self-signed by an
+unregistered credential) is rejected.
 
-## Diagram and video
+## Diagram
 
-[flow.puml](flow.puml) is the sequence diagram. `node record-split.mjs` records the victim and
-attacker tabs side by side and (with a full ffmpeg on PATH or installed via WinGet/Chocolatey)
-stitches `videos/combined.mp4`. Only `combined.mp4` is tracked; the raw `.webm` panes are
-gitignored.
+[flow.puml](flow.puml) is the sequence diagram; [flow-detailed.puml](flow-detailed.puml) is the
+verbose version showing the per-session `SK` generation step by step.
 
 ## PoC simplifications
 
