@@ -1,19 +1,15 @@
 node_modules/
-pocketid-demo/.env
-pocketid-demo/data/
-pocketid-demo/server.log
-pocketid-demo/videos/
-pocketid-demo/defended/videos/
-# ...but keep the shareable side-by-side clip in the repo
-!pocketid-demo/defended/videos/
-pocketid-demo/defended/videos/*
-!pocketid-demo/defended/videos/combined.mp4
-pocketid-demo/dpop-ext/videos/
-!pocketid-demo/dpop-ext/videos/
-pocketid-demo/dpop-ext/videos/*
-!pocketid-demo/dpop-ext/videos/combined.mp4
 
-# runtime server logs
-pocketid-demo/*.log
-pocketid-demo/*.out.log
-pocketid-demo/*.err.log
+# SQLite databases created by the Better Auth exploit demo
+pocketid-demo/betterauth-exploit/*.db
+pocketid-demo/betterauth-exploit/*.db-journal
+
+# runtime logs
+*.log
+
+# secrets / local binaries / generated artifacts (leftovers from the removed Pocket ID demo)
+.env
+*.env
+*.apikey
+cloudflared.exe
+videos/
