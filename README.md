@@ -7,7 +7,8 @@ A passkey sign-in on a **compromised login page** can be relayed so an attacker 
 running the attacker's code. The reusable prize is the **unbound session token**, so the fix is to
 **sender-constrain** it: bind the session to a key the page can neither read nor swap.
 
-Node-only, **no Docker**. One command per demo.
+It is **one [Better Auth](https://better-auth.com) app** with a `dpop` plugin. The same relay runs
+in both modes; a single toggle decides whether it wins. Node-only, **no Docker, no database**.
 
 ## Setup (once)
 
@@ -25,15 +26,13 @@ Then:
 
 1. Open **http://victim.localhost:5411/login** (the victim) and
    **http://attacker.localhost:5413/attacker** (the attacker) side by side.
-2. On the victim page, expand **"First time here? Create an Account"**, fill it in, and add a
+2. On the victim page, expand **"First time here? Create an account"**, fill it in, and add a
    passkey.
-3. Click **Sign in with passkey**. Your page fails - but the **attacker tab flips to
-   "Welcome, &lt;you&gt;"**. The attacker is now in your account.
+3. Click **Sign in with passkey** on the victim, then **Simulate compromised page**. The
+   **attacker tab flips to "Welcome, &lt;you&gt;"** - it is now in your account.
 
-The attacker gets a passkey challenge from the login server, the victim's backdoored page signs
-it, and the attacker submits that signature to mint the victim's session. (Runs over
-[Better Auth](https://better-auth.com) with an in-memory store, so there is nothing to build or
-clean up.) Ctrl+C stops it.
+The attacker gets a passkey challenge, the victim's compromised page signs it, and the attacker
+submits that signature to mint the victim's session. Ctrl+C stops it.
 
 ## 2. Run the fix and watch the same attack fail
 
@@ -41,35 +40,33 @@ clean up.) Ctrl+C stops it.
 npm run fix
 ```
 
-Then:
+Same app, same URLs, `dpop` plugin now **on**. Create an account + passkey, then:
 
-1. Open **http://victim.localhost:1521/login** (victim) and
-   **http://attacker.localhost:1523/attacker** (attacker).
-2. Create an account + passkey, then click **Sign in with passkey** - you land on **"Welcome"**.
-   The fix works for the real user.
-3. Click **Simulate compromised page (relay my sign-in)**. The attacker tab shows **"Session
-   captured, but locked"**: the relay completes and a token is minted, but it is **inert**.
+- **Sign in with passkey** - you land on **"Welcome"**. The fix works for the real user.
+- **Simulate compromised page (relay my sign-in)** - the attacker tab shows **"Session captured,
+  but locked"**: the relay completes and Better Auth mints a session, but it is **inert**.
 
 ## Why the fix works
 
 The exploit wins because the session is a bearer token: whoever holds it is the user. The fix is a
-**`dpop` WebAuthn extension** where the **authenticator mints a fresh per-session key and names it**
-inside the signed `authenticatorData`. The server binds the session to that key, and every request
-needs a fresh proof signed by it.
+**`dpop` Better Auth plugin** implementing a WebAuthn extension where the **authenticator mints a
+fresh per-session key and names it** inside the signed `authenticatorData`. The plugin binds the
+Better Auth session to that key (`jkt`), and every request needs a fresh proof signed by it.
 
 The key lives in the authenticator, **below the page**, so a page running the attacker's code can
 neither read it (no exfiltration) nor point the binding at a key the attacker holds (no
-substitution). The relayed login still mints a token, but without the key it is inert.
+substitution). The relayed login still mints a session, but without the key it is inert.
 
-Details: [demos/dpop-ext/SPEC.md](demos/dpop-ext/SPEC.md) and [the flow](demos/dpop-ext/flow.puml).
+Details: [demos/betterauth-dpop/](demos/betterauth-dpop/) and the extension spec in
+[demos/dpop-ext/SPEC.md](demos/dpop-ext/SPEC.md).
 
 ## What's here
 
 | Directory | What |
 |---|---|
-| [demos/betterauth-exploit/](demos/betterauth-exploit/) | the attack (Better Auth, in-memory, no Docker) |
-| [demos/dpop-ext/](demos/dpop-ext/) | the fix: the `dpop` WebAuthn extension |
+| [demos/betterauth-dpop/](demos/betterauth-dpop/) | **the demo**: one Better Auth app, `dpop` plugin, exploit/fix toggle |
+| [demos/dpop-ext/SPEC.md](demos/dpop-ext/SPEC.md) | the `dpop` WebAuthn extension spec and flow diagrams |
 
-Headless proof (no browser): `npm run fix:test`.
+Headless proof of both modes (no browser): `npm run fix:test`.
 
 > Authorized demo use only: your own machine and disposable test users.
