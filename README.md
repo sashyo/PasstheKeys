@@ -1,92 +1,79 @@
 # Passkey login-takeover: the exploit and the fix
 
-On an already-breached login page, one victim passkey sign-in can be **relayed** so an attacker
-ends up logged in **as that user**. Passkeys stop phishing and remote replay; they do not protect
-a page that is already running the attacker's code. The reusable prize is the **unbound session**
-(a bearer cookie/token), so the real fix is to **sender-constrain** it: bind the session to the
-passkey, below the page.
+A passkey sign-in on a **compromised login page** can be relayed so an attacker ends up logged in
+**as that user**. Passkeys stop phishing and remote replay; they do not protect a page already
+running the attacker's code. The reusable prize is the **unbound session token**, so the fix is to
+**sender-constrain** it: bind the session to the passkey, below the page.
 
-Everything here is **Node-only, no Docker**.
+Node-only, **no Docker**. One command per demo.
 
-## Quick links
-
-**The fix** (the point of this repo) - sender-constrain the session so a stolen or relayed token is inert:
-
-- **[Passkey-bound sessions](demos/defended/)** - runs in browsers today: the session binds
-  to the passkey credential that signed the login, and every request needs a fresh passkey proof.
-- **[`dpop` WebAuthn extension](demos/dpop-ext/)** - a prototype extension where the
-  authenticator mints and *names* a fresh per-session key inside the signed `authenticatorData`,
-  closing both key exfiltration and key substitution. See the [SPEC](demos/dpop-ext/SPEC.md)
-  and the [flow](demos/dpop-ext/flow.puml).
-
-**The exploit** it defends against (two layers):
-
-- **Frontend takeover** - a compromised login page relays your passkey sign-in and the attacker
-  lands in your account: [demos/betterauth-exploit/](demos/betterauth-exploit/).
-- **Backend token replay** - the unbound session is a bearer token: leak it server-side and replay
-  it anywhere. The fix makes it useless without the bound key.
-
-> Authorized demo use only: your own machine and disposable test users.
-
-## Layout
-
-| Directory | What | Run |
-|---|---|---|
-| [betterauth-exploit/](demos/betterauth-exploit/) | the attack, over [Better Auth](https://better-auth.com) (SQLite, no Docker) | `npm run exploit:migrate && npm run exploit` |
-| [defended/](demos/defended/) | fix 1: passkey-bound sessions | `npm run defended` |
-| [dpop-ext/](demos/dpop-ext/) | fix 2: the `dpop` WebAuthn extension | `npm run ext` |
-
-## The exploit (Better Auth, Docker-free)
+## Setup (once)
 
 ```bash
-npm install                                        # better-auth, @better-auth/passkey, better-sqlite3
-cd demos/betterauth-exploit
-node migrate.mjs                                   # create the SQLite tables (once)
-ROLE=victim   PORT=5411 node server.mjs            # Acme on http://localhost:5411
-ROLE=attacker PORT=5413 VICTIM_ORIGIN=http://localhost:5411 node server.mjs   # attacker on http://127.0.0.1:5413
+npm install
 ```
 
-1. Open <http://localhost:5411/login>, create an account, add a passkey.
-2. Open <http://127.0.0.1:5413/attacker> on another screen ("waiting for a sign-in").
-3. Back on `/login`, click **Sign in with passkey**. Your tab fails - but the attacker tab flips
-   to **"Welcome, &lt;you&gt;"**. The attacker holds your session.
+## 1. Run the exploit
 
-Better Auth issues the login challenge in a signed cookie; the attacker GETs it, the victim's
-backdoored page signs it, and the attacker POSTs the assertion to mint the victim's session. The
-victim runs on `localhost` and the attacker on `127.0.0.1` so their cookie jars stay separate.
-Details in [its README](demos/betterauth-exploit/README.md).
+```bash
+npm run exploit
+```
 
-## The fix: passkey-bound sessions
+Then:
 
-The attack wins because the session is a bearer token: whoever holds it is the user. The fix is to
-**bind the session to the passkey credential itself**, so a relayed token is inert. The key must
-live **below the page**: this threat model is "the page is already running the attacker's code,"
-so any key the page generates, derives (even via the WebAuthn PRF extension), or reads, the page
-can also hand to the attacker. The one key a compromised page can neither choose nor exfiltrate is
-the passkey credential's private key, which lives in the authenticator and only ever signs
-assertions. So that is the binding key:
+1. Open **http://localhost:5411/login** (the victim) and **http://127.0.0.1:5413/attacker** (the
+   attacker) side by side.
+2. On the victim page, expand **"First time here? Create an Account"**, fill it in, and add a
+   passkey.
+3. Click **Sign in with passkey**. Your page fails - but the **attacker tab flips to
+   "Welcome, &lt;you&gt;"**. The attacker is now in your account.
 
-- the server binds the session to the **public key of the credential that signed the login** (the
-  page supplies no key);
-- `/api/me` requires `Authorization: Passkey <token>` **and** a fresh proof-of-possession assertion
-  signed by that credential over `SHA256("GET <htu> <nonce>")` (one-time nonce).
+The attacker gets a passkey challenge from the login server, the victim's backdoored page signs
+it, and the attacker submits that signature to mint the victim's session. (Runs over
+[Better Auth](https://better-auth.com) + SQLite.) Ctrl+C stops it.
 
-Run the same relay against it and the attacker mints a real token but `/api/me` refuses it
-(`missing passkey proof`): the proof needs a fresh assertion from the victim's authenticator, which
-the attacker's machine does not have and the page cannot extract. Full write-up and a headless
-proof (`node e2e.mjs`) in [demos/defended/](demos/defended/).
+## 2. Run the fix and watch the same attack fail
 
-## The fix, taken further: the `dpop` WebAuthn extension
+Two flavors of the same idea - pick either:
 
-Passkey-bound sessions reuse the long-lived login credential. The
-[`dpop` extension](demos/dpop-ext/) prototypes having the **authenticator mint a fresh
-per-session key and name it** inside the signed `authenticatorData`, so the binding key is neither
-readable nor choosable by the page. See the [SPEC](demos/dpop-ext/SPEC.md),
-[flow](demos/dpop-ext/flow.puml), and a headless proof (`node e2e.mjs`).
+```bash
+npm run defended     # passkey-bound sessions (works in browsers today)
+npm run ext          # the dpop WebAuthn extension (prototype)
+```
 
-## Prerequisites
+Then (ports differ per demo; the command prints the two URLs):
 
-- Node 18+
-- `npm install` at the repo root (pulls `better-auth`, `@better-auth/passkey`, `better-sqlite3`;
-  the native module installs a prebuilt binary, no compiler needed). The two fix demos are
-  zero-dependency Node and need nothing installed to run.
+1. Open the victim `/login` and the attacker `/attacker` pages it prints.
+2. Create an account + passkey, then click **Sign in with passkey** - you land on **"Welcome"**.
+   The fix works for the real user.
+3. Click **Simulate compromised page (relay my sign-in)**. The attacker tab shows **"Session
+   captured, but locked"**: the relay completes and a token is minted, but it is **inert**.
+
+| `npm run` | URLs it prints |
+|---|---|
+| `defended` | victim `http://localhost:1421/login` · attacker `http://127.0.0.1:1423/attacker` |
+| `ext` | victim `http://localhost:1521/login` · attacker `http://127.0.0.1:1523/attacker` |
+
+## Why the fix works
+
+The session is bound to **the passkey credential itself** - a key that lives in the authenticator,
+which a compromised page can neither read nor swap. The server binds the session to the public key
+of the credential that signed the login, and every request needs a fresh passkey proof. A relayed
+or stolen token is useless without that key.
+
+- **[defended/](demos/defended/)** binds to the long-lived login passkey (deployable today).
+- **[dpop-ext/](demos/dpop-ext/)** prototypes a WebAuthn extension where the authenticator mints a
+  fresh per-session key and names it in the signed `authenticatorData`. See the
+  [SPEC](demos/dpop-ext/SPEC.md) and [flow](demos/dpop-ext/flow.puml).
+
+## What's here
+
+| Directory | What |
+|---|---|
+| [demos/betterauth-exploit/](demos/betterauth-exploit/) | the attack (Better Auth + SQLite, no Docker) |
+| [demos/defended/](demos/defended/) | fix 1: passkey-bound sessions |
+| [demos/dpop-ext/](demos/dpop-ext/) | fix 2: the `dpop` WebAuthn extension |
+
+Headless proofs (no browser): `npm run defended:test`, `npm run ext:test`.
+
+> Authorized demo use only: your own machine and disposable test users.
