@@ -1,63 +1,40 @@
-@startuml PassTheKeysDefended
-title Defended - passkey-bound DPoP: sender-constrained sessions, key held by the authenticator
-
+@startuml PasstheKeysDefended
+title PasstheKeys - defended (passkey-bound DPoP)
 skinparam shadowing false
 skinparam defaultFontName sans-serif
 skinparam sequenceMessageAlign center
-skinparam ParticipantPadding 14
+skinparam ParticipantPadding 16
 skinparam BoxPadding 12
-
 actor "Victim" as V
-box "The victim's device" #E7F6EC
-  participant "Authenticator\n(passkey, holds the private key)" as AUTH
-  participant "Victim's tab (/login)\n+ PasskeyProvider" as VP
+box Relay Party domain
+participant "Compromised\nfrontend" as VP
+participant "Server /\nIdP" as AP
 end box
-participant "Relying party\nverifies + binds the session" as RP
-box "Attacker's site (separate origin)" #FDECEC
-  participant "Attacker's tab" as AP
-  participant "Back-end\ndead-drop + proxy" as AD
-end box
+participant "Attacker server" as S
 actor "Attacker" as A
 
-note across
-  This is DPoP (sender-constrained, proof-of-possession per request) - with the PoP key held by
-  the authenticator instead of minted in the page. The session token is bound to a key
-  thumbprint (**jkt**), and every request carries a fresh proof over method + URL + nonce. The
-  only twist vs RFC 9449: the key is the passkey credential (private key never leaves the
-  authenticator) and the proof is a WebAuthn assertion, so a compromised page cannot choose,
-  read, or relay the key.
-end note
-
-== Attacker starts a login, but will not finish it ==
-A -> AP : open the attacker site
-AP -> RP : start a passkey login (via proxy)
-RP --> AP : nonce **Ca**
-AP -> AD : publish **Ca** in the dead-drop
-
-== Victim's page is compromised and relays the sign-in ==
-V -> VP : click "Sign in"
-VP -> AD : fetch the nonce (cross-origin) -> **Ca**
-VP -> AUTH : get(**Ca**)  (user verifies)
-AUTH --> VP : assertion over **Ca**, signed by the passkey\n(the private key stays in the authenticator)
-VP -> AD : hand over the assertion\n(there is no page-held key to leak)
-
-== Attacker finishes the login - and is stuck ==
-AP -> AD : take the assertion
-AP -> RP : finish the login with it
-RP -> RP : verify the signature; DPoP-bind the session\ntoken to the credential's key thumbprint (**jkt**)
-RP --> AP : a real session token for the victim  (DPoP-bound to the passkey)
-AP -> RP : GET /api/me  (Authorization: Passkey <token>)
-note right of AP : the DPoP proof is a FRESH assertion from the\nvictim's authenticator; this machine has none
-RP --> AP : **401** - missing passkey proof (no DPoP proof)
-AP -> A : "Session captured, but locked"
-
-note across #E7F6EC
-  Same guarantee as DPoP - a stolen/relayed token is useless without the bound key - but the
-  DPoP key is in the authenticator, below the page. Finishing the ceremony is not enough: every
-  resource call needs a fresh DPoP proof signed by the passkey, the attacker's machine has no
-  authenticator, and the key never leaves the victim's device. A compromised page can coax at
-  most one more user-approved proof out of the authenticator - it can never hand over the key,
-  so there is no durable, relayable session.
-end note
-
+== Attacker arms, in its own tab of the site ==
+A -> AP : Login
+activate AP
+AP --> A : nonce
+A -> S : nonce
+activate S
+== Victim tries to log in; signs the attacker's nonce ==
+V -> VP : Login
+VP -> S
+S --> VP : nonce
+VP -> V : Passkey?
+V --> VP : assertion
+VP -> S : assertion
+VP -> V : Fail
+== Attacker finishes the login ==
+S --> A : assertion
+deactivate S
+A -> AP : /login/finish
+deactivate AP
+AP --> A : **access_token** (DPoP-bound to the passkey)
+== Attacker tries to use it, and is stuck ==
+A -> AP : /api/me + DPoP proof?
+note right of A : DPoP proof = a fresh passkey assertion,\nkey is in the victim's authenticator
+AP --> A : 401, no DPoP proof
 @enduml
