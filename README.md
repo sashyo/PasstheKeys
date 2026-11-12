@@ -7,9 +7,24 @@ that is already running the attacker's code. The reusable prize is the **unbound
 token**, so the real fix is to sender-constrain it: bind the session to the passkey, below the
 page.
 
-This repo ships both halves: the **exploit** (below) and a **working fix** that makes the
-same relay useless, in [pocketid-demo/defended/](pocketid-demo/defended/). Jump to
-[The fix](#the-fix-passkey-bound-sessions).
+## Quick links
+
+**The fix** (the point of this repo) - sender-constrain the session so a stolen or relayed token is inert:
+
+- **[Passkey-bound sessions](pocketid-demo/defended/)** - the fix that runs in browsers today: the
+  session binds to the passkey credential that signed the login, and every request needs a fresh
+  passkey proof. See [the write-up below](#the-fix-passkey-bound-sessions).
+- **[`dpop` WebAuthn extension](pocketid-demo/dpop-ext/)** - a prototype extension where the
+  authenticator mints and *names* a fresh per-session key inside the signed `authenticatorData`,
+  closing both key exfiltration and key substitution. Read the [SPEC](pocketid-demo/dpop-ext/SPEC.md)
+  and the [flow](pocketid-demo/dpop-ext/flow.puml).
+
+**The exploit** it defends against (two layers):
+
+- **Frontend takeover** - a compromised login page relays your passkey sign-in and the attacker
+  lands in your account ([try it](#try-it); code in [pocketid-demo/](pocketid-demo/)).
+- **Backend token replay** - the unbound session token is a bearer token: leak it server-side and
+  replay it anywhere. The fix makes it useless without the bound key.
 
 > Authorized demo use only: your own instance and disposable test users.
 
