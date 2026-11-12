@@ -1,9 +1,8 @@
 # `dpop` WebAuthn extension demo: authenticator-named, per-session binding key
 
-The passkey-as-key fix in [../defended/](../defended/) is page-safe but reuses the long-lived
-login credential. This demo prototypes a **WebAuthn extension** (`dpop`) that lets the
-**authenticator generate a fresh per-session key `SK`** and **name it inside the signed
-`authenticatorData`**, so the relying party can sender-constrain the session to `SK` while:
+This demo prototypes a **WebAuthn extension** (`dpop`) that lets the **authenticator generate a
+fresh per-session key `SK`** and **name it inside the signed `authenticatorData`**, so the relying
+party can sender-constrain the session to `SK` while:
 
 - `SK`'s private key never leaves the authenticator (no exfiltration), and
 - the page cannot substitute a key it controls (the authenticator, not the page, names `SK`).

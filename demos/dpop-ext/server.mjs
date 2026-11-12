@@ -4,7 +4,7 @@
 // assertion signed by SK on every request.
 //
 // Three roles:
-//   ROLE=victim        PORT=1521  Acme (defended): /login, the RP, /api/me
+//   ROLE=victim        PORT=1521  Acme (dpop-ext): /login, the RP, /api/me
 //   ROLE=attacker      PORT=1523  attacker site + dead-drop + proxy to the victim RP
 //   ROLE=authenticator PORT=1525  serves the simulated extended authenticator (iframe origin)
 //
