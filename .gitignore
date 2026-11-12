@@ -3,6 +3,7 @@ pocketid-demo/.env
 pocketid-demo/data/
 pocketid-demo/server.log
 pocketid-demo/videos/
+pocketid-demo/defended/videos/
 
 # runtime server logs
 pocketid-demo/*.log

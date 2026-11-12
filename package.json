@@ -6,7 +6,11 @@
   "description": "Passkey login-takeover demo against a local Pocket ID instance. Authorized demo and self-testing only.",
   "scripts": {
     "start": "node pocketid-demo/server.mjs",
-    "e2e": "node pocketid-demo/e2e.mjs"
+    "e2e": "node pocketid-demo/e2e.mjs",
+    "defended": "node pocketid-demo/defended/server.mjs",
+    "defended:e2e": "node pocketid-demo/defended/e2e.mjs",
+    "defended:e2e:browser": "node pocketid-demo/defended/e2e-browser.mjs",
+    "defended:record": "node pocketid-demo/defended/record.mjs"
   },
   "devDependencies": {
     "playwright": "1.65.0"
