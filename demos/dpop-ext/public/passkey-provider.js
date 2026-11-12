@@ -8,7 +8,7 @@ const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest('SHA-2
 
 export class PasskeyProvider {
   constructor({ authOrigin } = {}) {
-    this.authOrigin = authOrigin || 'http://localhost:1525';
+    this.authOrigin = authOrigin || 'http://authenticator.localhost:1525';
     this._pending = new Map();
     this._seq = 0;
     this._ready = null;

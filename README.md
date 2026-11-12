@@ -43,7 +43,8 @@ npm run fix
 
 Then:
 
-1. Open **http://localhost:1521/login** (victim) and **http://127.0.0.1:1523/attacker** (attacker).
+1. Open **http://victim.localhost:1521/login** (victim) and
+   **http://attacker.localhost:1523/attacker** (attacker).
 2. Create an account + passkey, then click **Sign in with passkey** - you land on **"Welcome"**.
    The fix works for the real user.
 3. Click **Simulate compromised page (relay my sign-in)**. The attacker tab shows **"Session
