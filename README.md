@@ -23,8 +23,8 @@ npm run exploit
 
 Then:
 
-1. Open **http://localhost:5411/login** (the victim) and **http://127.0.0.1:5413/attacker** (the
-   attacker) side by side.
+1. Open **http://victim.localhost:5411/login** (the victim) and
+   **http://attacker.localhost:5413/attacker** (the attacker) side by side.
 2. On the victim page, expand **"First time here? Create an Account"**, fill it in, and add a
    passkey.
 3. Click **Sign in with passkey**. Your page fails - but the **attacker tab flips to
