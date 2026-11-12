@@ -40,11 +40,32 @@ async function ctx(browser, auth) {
   }
   return { c, page };
 }
-// ffmpeg on PATH that can hstack. (Playwright's bundled ffmpeg is a minimal vpx-only build
-// with no filters, so it cannot stitch -- we don't fall back to it.)
+// An ffmpeg that can hstack. (Playwright's bundled ffmpeg is a minimal vpx-only build with no
+// filters, so it cannot stitch -- we never fall back to it.) Tries PATH, then common Windows
+// install locations, and only accepts a build whose filter list includes hstack.
+function hasHstack(cmd) {
+  const f = spawnSync(cmd, ['-hide_banner', '-filters'], { encoding: 'utf8' });
+  return f.status === 0 && /\bhstack\b/.test(f.stdout || '');
+}
 function findFfmpeg() {
-  const f = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' });
-  if (f.status === 0 && /\bhstack\b/.test(f.stdout || '')) return 'ffmpeg';
+  if (hasHstack('ffmpeg')) return 'ffmpeg';
+  const roots = [
+    path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Packages'),
+    path.join(process.env.ProgramData || 'C:\\ProgramData', 'chocolatey', 'bin'),
+  ];
+  for (const root of roots) {
+    try {
+      const stack = [root];
+      while (stack.length) {
+        const dir = stack.pop();
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory() && /ffmpeg|winget|bin|build/i.test(e.name)) stack.push(p);
+          else if (e.isFile() && e.name.toLowerCase() === 'ffmpeg.exe' && hasHstack(p)) return p;
+        }
+      }
+    } catch {}
+  }
   return null;
 }
 
