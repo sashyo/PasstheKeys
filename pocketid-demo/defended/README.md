@@ -69,11 +69,18 @@ to be running.
 npm install && npx playwright install chromium   # dev only
 node defended/e2e-browser.mjs    # headful-equivalent: legit sign-in passes, relay stays locked
 node defended/record.mjs         # writes defended/videos/{victim,attacker}.webm
+node defended/record-split.mjs   # same-size panes + stitched videos/combined.mp4
 ```
 
 `victim.webm` shows one person enrolling, signing in DPoP-bound ("Welcome"), then their page
 being compromised and relaying the sign-in. `attacker.webm` shows that tab flipping to
-**"Session captured - but locked."**
+**"Session captured, but locked."**
+
+`record-split.mjs` records both tabs at the same size (`split-victim.webm`,
+`split-attacker.webm`) and, if a full `ffmpeg` is on `PATH`, stitches them side by side into
+`videos/combined.mp4` (victim left, attacker right). Playwright's bundled ffmpeg is a minimal
+vpx-only build with no `hstack` filter, so it is not used; without a full ffmpeg the two panes
+are written and the exact stitch command is printed. All of `videos/` is gitignored.
 
 ## Diagram
 
