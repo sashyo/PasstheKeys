@@ -1,9 +1,5 @@
 node_modules/
 
-# SQLite databases created by the Better Auth exploit demo
-demos/betterauth-exploit/*.db
-demos/betterauth-exploit/*.db-journal
-
 # runtime logs
 *.log
 
@@ -16,3 +12,7 @@ videos/
 
 # stale locked copy of the old folder (lives on disk until those processes stop)
 pocketid-demo/
+
+# stray SQLite files from older runs (the demo no longer uses a database)
+demos/betterauth-exploit/*.db
+demos/betterauth-exploit/*.db-journal
