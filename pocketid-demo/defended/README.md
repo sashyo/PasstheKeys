@@ -89,7 +89,7 @@ node defended/record.mjs         # writes defended/videos/{victim,attacker}.webm
 node defended/record-split.mjs   # same-size panes + stitched videos/combined.mp4
 ```
 
-`victim.webm` shows one person enrolling, signing in DPoP-bound ("Welcome"), then their page
+`victim.webm` shows one person enrolling, signing in passkey-bound ("Welcome"), then their page
 being compromised and relaying the sign-in. `attacker.webm` shows that tab flipping to
 **"Session captured, but locked."**
 
