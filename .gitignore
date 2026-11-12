@@ -1,8 +1,8 @@
 node_modules/
 
 # SQLite databases created by the Better Auth exploit demo
-pocketid-demo/betterauth-exploit/*.db
-pocketid-demo/betterauth-exploit/*.db-journal
+demos/betterauth-exploit/*.db
+demos/betterauth-exploit/*.db-journal
 
 # runtime logs
 *.log

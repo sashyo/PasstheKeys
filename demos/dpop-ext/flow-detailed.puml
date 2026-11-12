@@ -1,0 +1,82 @@
+@startuml PassTheKeysDpopExtDetailed
+title Defended with the `dpop` WebAuthn extension - the authenticator mints and names a per-session key
+
+skinparam shadowing false
+skinparam defaultFontName sans-serif
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 14
+skinparam BoxPadding 12
+
+actor "Victim" as V
+box "The victim's device" #E7F6EC
+  participant "Authenticator\n(passkey credential + the dpop extension)" as AU
+  participant "Victim's tab (/login)\n+ PasskeyProvider" as VP
+end box
+participant "Relying party\nverifies the assertion, binds the session" as RP
+box "Attacker's site (separate origin)" #FDECEC
+  participant "Attacker's tab" as AP
+  participant "Back-end\ndead-drop + proxy to the RP" as AD
+end box
+actor "Attacker" as A
+
+note across
+  The binding key is generated INSIDE the authenticator, fresh for each login, and named by it.
+  The page never holds, derives, or chooses it. SK_pub travels inside the credential-signed
+  authenticatorData, so a page running attacker code can neither read it out nor swap it.
+end note
+
+== The attacker arms a login in its own tab, but will not finish it ==
+A -> AP : open the attacker site
+AP -> RP : POST /login/begin  (through the attacker's proxy)
+activate RP
+RP --> AP : { passkeyToken, challenge Ca }
+AP -> AD : publish the challenge Ca in the dead-drop
+
+== The victim's page is compromised and relays the sign-in ==
+V -> VP : click "Sign in"
+VP -> AD : fetch the pending challenge (cross-origin) -> Ca
+VP -> AU : navigator.credentials.get(challenge = Ca, extensions: { dpop: true })
+activate AU
+V --> AU : user verification (biometric / PIN)
+AU -> AU : generate a fresh ephemeral key pair SK\n(new for every login)
+AU -> AU : write SK_pub into authenticatorData\n(dpop extension output, ED flag 0x80)
+AU -> AU : sign authenticatorData || SHA256(clientDataJSON)\nwith the CREDENTIAL private key
+AU -> AU : seal SK's private key inside the authenticator
+AU --> VP : assertion over Ca, whose SIGNED authenticatorData carries SK_pub
+deactivate AU
+VP -> AD : hand the assertion to the dead-drop
+note left of VP
+  Nothing useful leaks: there is no page-held key, and the page cannot change
+  SK_pub without invalidating the credential signature.
+end note
+VP -> V : "that did not work" (the victim never finished a login of their own)
+
+== The attacker finishes the login, and is bound to a key it does not hold ==
+AP -> AD : take the relayed assertion
+AP -> RP : POST /login/finish  { assertion, passkeyToken }
+RP -> RP : verify the credential signature over Ca;\nread SK_pub from the SIGNED authenticatorData;\nbind the session token to jkt = SHA256(SK_pub)
+RP --> AP : { access_token, jkt }  (a real session for the victim, bound to SK)
+deactivate RP
+
+== The attacker tries to use the token, and is stuck ==
+AP -> RP : GET /api/me  (Authorization: Passkey <access_token>)
+RP --> AP : 401 - this session needs a fresh per-request proof
+note right of AP
+  A proof is an assertion signed by SK. SK's private key is sealed in the VICTIM's
+  authenticator; this machine has no authenticator for it, and the key was never
+  exposed to the relay. The attacker cannot produce the proof.
+end note
+AP -> RP : GET /api/me  (no valid proof)
+RP --> AP : 401 - missing passkey proof
+AP -> A : "Session captured, but locked"
+
+note across #E7F6EC
+  Both ways a separate binding key normally fails are closed:
+    Exfiltration - SK's private key never leaves the authenticator, so the page cannot steal it.
+    Substitution - SK_pub is named inside the credential-signed authenticatorData, so the page
+                   cannot point the binding at a key the attacker holds.
+  The relayed token is sender-constrained to a key only the victim's authenticator can wield,
+  so it is inert anywhere else.
+end note
+
+@enduml
