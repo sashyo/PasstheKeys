@@ -27,7 +27,11 @@ const concat = (...arrs) => { let n = 0; for (const a of arrs) n += a.length; co
 // Credentials persist in THIS origin's IndexedDB (the authenticator's store), unreadable to the RP page.
 function idb() { return new Promise((res, rej) => { const r = indexedDB.open('dpop-authn', 1); r.onupgradeneeded = () => r.result.createObjectStore('creds'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 async function putCred(credId, rec) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('creds', 'readwrite').objectStore('creds').put(rec, credId); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
-async function anyCred() { const db = await idb(); return new Promise((res) => { const t = db.transaction('creds', 'readonly').objectStore('creds').getAll(); t.onsuccess = () => res(t.result[0] || null); t.onerror = () => res(null); }); }
+async function clearCreds() { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('creds', 'readwrite').objectStore('creds').clear(); t.onsuccess = () => res(); t.onerror = () => rej(t.error); }); }
+// Hold exactly ONE identity credential. The server forgets credentials when it restarts (in-memory
+// demo), so each enrollment must replace any old credential here; otherwise login could present a
+// credential the current server never saw and fail with "unknown credential".
+async function anyCred() { const db = await idb(); return new Promise((res) => { const t = db.transaction('creds', 'readonly').objectStore('creds').getAll(); t.onsuccess = () => res(t.result[t.result.length - 1] || null); t.onerror = () => res(null); }); }
 
 const SK = new Map(); // handle -> { skPriv (non-extractable CryptoKey) }
 
@@ -40,6 +44,7 @@ const clientData = (challenge, origin) => te.encode(JSON.stringify({ type: 'weba
 
 const ops = {
   async register({ username }) {
+    await clearCreds(); // one identity credential per authenticator; replaces any stale one
     const pair = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
     const credId = rndId();
     await putCred(credId, { credId, username, priv: pair.privateKey, pub: pair.publicKey });

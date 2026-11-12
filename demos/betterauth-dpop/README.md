@@ -1,36 +1,39 @@
-# Better Auth + the `dpop` extension: one app, one toggle
+# The fix: Better Auth + the `dpop` extension
 
-The exploit and the fix in a single [Better Auth](https://better-auth.com) app. A `dpop` Better
-Auth plugin ([dpop-plugin.mjs](dpop-plugin.mjs)) adds the sender-constraining WebAuthn extension:
-the authenticator mints a fresh per-session key `SK`, names `SK_pub` inside the signed
-`authenticatorData`, and the plugin binds the Better Auth session to `jkt = thumbprint(SK_pub)` and
-requires a per-request proof signed by `SK`.
+A [Better Auth](https://better-auth.com) app whose `dpop` plugin ([dpop-plugin.mjs](dpop-plugin.mjs))
+adds the sender-constraining WebAuthn extension. The authenticator mints a fresh per-session key
+`SK`, names `SK_pub` inside the signed `authenticatorData`, and the plugin binds the Better Auth
+session to `jkt = thumbprint(SK_pub)` and requires a per-request proof signed by `SK`.
 
-One environment variable flips the demo:
+This is the **fix** half of the project; the exploit is its own Better Auth app
+([../betterauth-exploit/](../betterauth-exploit/), `npm run exploit`). Run the fix with the same
+relay and it fails.
 
-| Mode | `DPOP_ENFORCE` | What happens |
-|---|---|---|
-| **exploit** | `0` | plain passkey login; a relayed assertion mints a **usable** session (account takeover) |
-| **fix** | `1` | the session is **dpop-bound**; the relayed session mints a token but it is **inert** |
-
-> No Docker, no database, no native modules. In-memory store; restarting wipes all state.
-> Authorized demo use only: your own machine and disposable test users.
+> No Docker, no database, no native modules. In-memory store; **restarting the server wipes all
+> accounts and passkeys** - see the note below. Authorized demo use only.
 
 ## Run
 
 ```bash
-npm run exploit    # dpop OFF — the relay takes over the attacker tab
-npm run fix        # dpop ON  — the same relay lands "captured, but locked"
+npm run fix
 ```
 
-Each starts three roles on three hosts (all resolve to `127.0.0.1` in the browser):
+Starts three roles on three hosts (all resolve to `127.0.0.1` in the browser):
 
-- **victim** `http://victim.localhost:5411/login` — Acme, Better Auth mounted at `/api/auth`
-- **attacker** `http://attacker.localhost:5413/attacker` — attacker site, dead-drop, `/api/auth` proxy
-- **authenticator** `http://authenticator.localhost:5415` — the simulated extended authenticator (iframe origin)
+- **victim** `http://victim.localhost:1521/login` - Acme, Better Auth mounted at `/api/auth`
+- **attacker** `http://attacker.localhost:1523/attacker` - attacker site, dead-drop, `/api/auth` proxy
+- **authenticator** `http://authenticator.localhost:1525` - the simulated extended authenticator (iframe origin)
 
 Open the victim and attacker URLs side by side, create an account + passkey on the victim, then use
-**Sign in with passkey** (works) and **Simulate compromised page** (relays to the attacker tab).
+**Sign in with passkey** (works) and **Simulate compromised page** (the attacker tab lands
+"captured, but locked").
+
+## Heads-up: restart = re-enroll
+
+The store is in memory, so **restarting the server forgets every account and passkey**. The
+simulated authenticator keeps its credential in the browser, so after a restart you may see
+`unknown credential` on sign-in - just expand **Create an account** and enroll again (enrolling
+replaces the authenticator's credential, so there is never a stale one).
 
 ## Why a custom plugin and a simulated authenticator
 
@@ -48,23 +51,24 @@ owns users and sessions; the plugin adds the sender-constraint. See
 The compromised page relays the login assertion, which names the **victim's** `SK`. The attacker
 finishes and Better Auth mints a real session bound to that `SK` (`jkt`), but:
 
-- it cannot produce proofs — `SK` is sealed in the victim's authenticator (no exfiltration), and
-- it cannot point the binding at a key it holds — `SK_pub` rides in the **signed** `authenticatorData` (no substitution).
+- it cannot produce proofs - `SK` is sealed in the victim's authenticator (no exfiltration), and
+- it cannot point the binding at a key it holds - `SK_pub` rides in the **signed** `authenticatorData` (no substitution).
 
 So `/api/auth/dpop/me` requires a fresh `SK` proof the attacker can't make, and the stolen session is
 inert.
 
 ## Checks
 
-Headless model (authenticator emulated in Node), runs **both** modes with no browser:
+Headless model (authenticator emulated in Node), with **no browser**:
 
 ```bash
 npm run fix:test
 ```
 
-Asserts: legit login binds to the signed `SK` and `/dpop/me` unlocks with a proof; the relayed
-session is refused without a proof and with a proof from the attacker's own key; a substituted
-assertion is rejected; and with enforcement off the relay takes over.
+It exercises the plugin in both states (the `enforce` option) to prove the fix matters: with
+enforcement on, legit login binds to the signed `SK` and `/dpop/me` unlocks with a proof, while the
+relayed session is refused without a proof, with a proof from the attacker's own key, and a
+substituted assertion is rejected; with enforcement off, the same relay takes over.
 
 ## PoC simplifications
 

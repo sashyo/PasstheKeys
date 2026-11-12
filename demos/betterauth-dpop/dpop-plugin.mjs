@@ -56,7 +56,7 @@ const headerOf = (ctx, name) => {
 
 export const dpop = (opts = {}) => {
   const enforce = opts.enforce !== false;              // default: fix on
-  const ORIGIN = opts.origin;                          // e.g. http://victim.localhost:5411
+  const ORIGIN = opts.origin;                          // e.g. http://victim.localhost:1521
   const RP_ID = opts.rpId || new URL(ORIGIN).hostname; // victim.localhost
   const HTU = ORIGIN + '/api/auth/dpop/me';
 

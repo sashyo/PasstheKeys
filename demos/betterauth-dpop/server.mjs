@@ -1,10 +1,10 @@
 // One Better Auth app, three roles, one toggle. The `dpop` plugin (./dpop-plugin.mjs) adds the
 // sender-constraining WebAuthn extension; DPOP_ENFORCE flips exploit vs fix (see auth.mjs).
 //
-//   ROLE=victim        PORT=5411  Acme on victim.localhost: /login, Better Auth at /api/auth.
-//   ROLE=attacker      PORT=5413  attacker.localhost: /attacker + dead-drop, and an /api/auth proxy
+//   ROLE=victim        PORT=1521  Acme on victim.localhost: /login, Better Auth at /api/auth.
+//   ROLE=attacker      PORT=1523  attacker.localhost: /attacker + dead-drop, and an /api/auth proxy
 //                                 to the victim Better Auth (Host/Origin rewritten).
-//   ROLE=authenticator PORT=5415  authenticator.localhost: the simulated extended authenticator
+//   ROLE=authenticator PORT=1525  authenticator.localhost: the simulated extended authenticator
 //                                 (separate origin, embedded as an iframe by the RP page).
 //
 // victim/attacker/authenticator are different hosts, so the attacker gets its own cookie jar and the
@@ -16,8 +16,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROLE = ['attacker', 'authenticator'].includes(process.env.ROLE) ? process.env.ROLE : 'victim';
-const PORT = Number(process.env.PORT || ({ victim: 5411, attacker: 5413, authenticator: 5415 }[ROLE]));
-const VICTIM_ORIGIN = process.env.VICTIM_ORIGIN || process.env.BA_BASEURL || 'http://victim.localhost:5411';
+const PORT = Number(process.env.PORT || ({ victim: 1521, attacker: 1523, authenticator: 1525 }[ROLE]));
+const VICTIM_ORIGIN = process.env.VICTIM_ORIGIN || process.env.BA_BASEURL || 'http://victim.localhost:1521';
 const RP_HOST = new URL(VICTIM_ORIGIN).host;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

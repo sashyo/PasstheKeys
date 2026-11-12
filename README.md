@@ -7,8 +7,9 @@ A passkey sign-in on a **compromised login page** can be relayed so an attacker 
 running the attacker's code. The reusable prize is the **unbound session token**, so the fix is to
 **sender-constrain** it: bind the session to a key the page can neither read nor swap.
 
-It is **one [Better Auth](https://better-auth.com) app** with a `dpop` plugin. The same relay runs
-in both modes; a single toggle decides whether it wins. Node-only, **no Docker, no database**.
+Two [Better Auth](https://better-auth.com) apps: the **exploit** (a plain passkey login that gets
+relayed) and the **fix** (the same login with a `dpop` plugin that sender-constrains the session).
+Node-only, **no Docker, no database**. One command each.
 
 ## Setup (once)
 
@@ -26,10 +27,10 @@ Then:
 
 1. Open **http://victim.localhost:5411/login** (the victim) and
    **http://attacker.localhost:5413/attacker** (the attacker) side by side.
-2. On the victim page, expand **"First time here? Create an account"**, fill it in, and add a
+2. On the victim page, expand **"First time here? Create an Account"**, fill it in, and add a
    passkey.
-3. Click **Sign in with passkey** on the victim, then **Simulate compromised page**. The
-   **attacker tab flips to "Welcome, &lt;you&gt;"** - it is now in your account.
+3. Click **Sign in with passkey**. Your page fails - but the **attacker tab flips to
+   "Welcome, &lt;you&gt;"**. The attacker is now in your account.
 
 The attacker gets a passkey challenge, the victim's compromised page signs it, and the attacker
 submits that signature to mint the victim's session. Ctrl+C stops it.
@@ -40,7 +41,8 @@ submits that signature to mint the victim's session. Ctrl+C stops it.
 npm run fix
 ```
 
-Same app, same URLs, `dpop` plugin now **on**. Create an account + passkey, then:
+A second app on its own ports. Open **http://victim.localhost:1521/login** and
+**http://attacker.localhost:1523/attacker**, create an account + passkey, then:
 
 - **Sign in with passkey** - you land on **"Welcome"**. The fix works for the real user.
 - **Simulate compromised page (relay my sign-in)** - the attacker tab shows **"Session captured,
@@ -64,9 +66,10 @@ Details: [demos/betterauth-dpop/](demos/betterauth-dpop/) and the extension spec
 
 | Directory | What |
 |---|---|
-| [demos/betterauth-dpop/](demos/betterauth-dpop/) | **the demo**: one Better Auth app, `dpop` plugin, exploit/fix toggle |
+| [demos/betterauth-exploit/](demos/betterauth-exploit/) | **the exploit**: the passkey relay on Better Auth (ports 5411/5413) |
+| [demos/betterauth-dpop/](demos/betterauth-dpop/) | **the fix**: the same login with the `dpop` Better Auth plugin (ports 1521/1523/1525) |
 | [demos/dpop-ext/SPEC.md](demos/dpop-ext/SPEC.md) | the `dpop` WebAuthn extension spec and flow diagrams |
 
-Headless proof of both modes (no browser): `npm run fix:test`.
+Headless proof of the fix (no browser): `npm run fix:test`.
 
 > Authorized demo use only: your own machine and disposable test users.
