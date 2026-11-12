@@ -32,7 +32,8 @@ Then:
 
 The attacker gets a passkey challenge from the login server, the victim's backdoored page signs
 it, and the attacker submits that signature to mint the victim's session. (Runs over
-[Better Auth](https://better-auth.com) + SQLite.) Ctrl+C stops it.
+[Better Auth](https://better-auth.com) with an in-memory store, so there is nothing to build or
+clean up.) Ctrl+C stops it.
 
 ## 2. Run the fix and watch the same attack fail
 
@@ -65,7 +66,7 @@ Details: [demos/dpop-ext/SPEC.md](demos/dpop-ext/SPEC.md) and [the flow](demos/d
 
 | Directory | What |
 |---|---|
-| [demos/betterauth-exploit/](demos/betterauth-exploit/) | the attack (Better Auth + SQLite, no Docker) |
+| [demos/betterauth-exploit/](demos/betterauth-exploit/) | the attack (Better Auth, in-memory, no Docker) |
 | [demos/dpop-ext/](demos/dpop-ext/) | the fix: the `dpop` WebAuthn extension |
 
 Headless proof (no browser): `npm run fix:test`.
